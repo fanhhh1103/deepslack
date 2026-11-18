@@ -1,6 +1,6 @@
-# 🐳 TokenPet · AI娘算力桌宠
+# 🐳 DeepSlack · 深度摸鱼（烧币版）
 
-> **把每天烧掉的真实 AI Token，变成桌面右下角活灵活现的 Q 弹陪伴宠！**  
+> **一台靠烧真实 AI Token 喂养的赛博电子鸡——不烧算力就在桌上摸鱼看漫画，鼠标抓包就慌张假装深度思考！**  
 > `大肥鱼 (DeepSeek)` · `大橘 (Claude)` · `白龙 (ChatGPT)` · `星猫 (Gemini)` · `Grok娘 (Grok)`
 
 ---

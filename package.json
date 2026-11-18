@@ -1,8 +1,8 @@
 {
-  "name": "token-pet",
+  "name": "deepslack",
   "private": true,
   "version": "1.0.0",
-  "description": "TokenPet · AI娘算力桌宠 — 把每天烧掉的真实 AI Token 变成桌面上活灵活现的 Q 弹陪伴宠 (MIT)",
+  "description": "DeepSlack · 深度摸鱼（烧币版）— 把每天烧掉的真实 AI Token 变成桌面上的赛博电子鸡与摸鱼游乐场 (MIT)",
   "author": "evanpunk2077 (https://x.com/evanpunk2077)",
   "license": "MIT",
   "type": "module",
