@@ -1,0 +1,21 @@
+{
+  "name": "token-pet",
+  "private": true,
+  "version": "1.0.0",
+  "description": "TokenPet · AI娘算力桌宠 — 把每天烧掉的真实 AI Token 变成桌面上活灵活现的 Q 弹陪伴宠 (MIT)",
+  "author": "evanpunk2077 (https://x.com/evanpunk2077)",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --port 4173",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^6.0.5",
+    "vitest": "^2.1.8"
+  }
+}

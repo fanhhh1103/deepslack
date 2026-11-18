@@ -1,0 +1,23 @@
+# Dependencies & build outputs
+node_modules/
+dist/
+src-tauri/target/
+*.app/
+
+# Dev-only QA screenshots & asset generation scripts (keep public repo lean)
+qa/
+tools/
+
+# OS & editor files
+.DS_Store
+.vscode/
+.idea/
+
+# Python cache (for tools/ scripts)
+__pycache__/
+*.py[cod]
+
+# Environment & logs
+.env
+.env.*
+*.log

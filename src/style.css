@@ -1,0 +1,512 @@
+:root {
+  --font-sans: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei",
+    system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --ink-900: #0f172a;
+  --ink-700: #334155;
+  --ink-500: #64748b;
+  --card-bg: rgba(255, 255, 255, 0.98);
+  --card-border: #1e293b;
+  --accent-blue: #2563eb;
+  --accent-amber: #f59e0b;
+  --accent-orange: #ea580c;
+  --accent-violet: #7c3aed;
+  --accent-rose: #e11d48;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  color: var(--ink-900);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ==================== Tauri 桌面全透明 310×340 纯享桌宠模式 ==================== */
+html.mode-tauri,
+body.mode-tauri {
+  width: 310px;
+  height: 340px;
+  overflow: hidden;
+  background: transparent !important;
+}
+
+body.mode-tauri #app {
+  width: 310px;
+  height: 340px;
+  background: transparent !important;
+}
+
+/* ==================== 普通浏览器治愈赛博点阵预览模式 ==================== */
+body.mode-browser {
+  min-height: 100vh;
+  background-color: #f4f7fb;
+  background-image:
+    radial-gradient(circle at 18% 16%, rgba(59, 130, 246, 0.12), transparent 36%),
+    radial-gradient(circle at 84% 82%, rgba(236, 72, 153, 0.12), transparent 38%),
+    radial-gradient(rgba(100, 116, 139, 0.22) 1.25px, transparent 1.25px);
+  background-size: 100% 100%, 100% 100%, 22px 22px;
+}
+
+body.mode-browser #app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 14px 12px 20px;
+  gap: 14px;
+}
+
+/* 网页顶部纯享桌宠快捷调试条 */
+.web-sim-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 2px solid #1e293b;
+  border-radius: 999px;
+  box-shadow: 0 4px 0 rgba(30, 41, 59, 0.12), 0 8px 20px rgba(30, 41, 59, 0.08);
+  max-width: 1120px;
+}
+
+.sim-bar-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: #1e293b;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.sim-bar-sep {
+  width: 1.5px;
+  height: 18px;
+  background: #cbd5e1;
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+.sim-feed-btn {
+  appearance: none;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e293b;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.12s ease,
+    border-color 0.12s ease, background 0.12s ease;
+  white-space: nowrap;
+}
+
+.sim-feed-btn:hover {
+  transform: translateY(-1.5px);
+  border-color: var(--btn-accent, #2563eb);
+  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.16);
+}
+
+.sim-feed-btn:active {
+  transform: translateY(1px) scale(0.97);
+}
+
+.sim-feed-btn.sim-burst {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+.sim-feed-btn.sim-action-btn {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.sim-feed-btn.sim-action-btn:hover {
+  background: #eff6ff;
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+/* 浏览器中的 310×340 透明桌面视口模拟框 */
+.browser-stage-shell {
+  position: relative;
+  width: 310px;
+  height: 340px;
+  border-radius: 24px;
+  border: 2px dashed rgba(100, 116, 139, 0.35);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(241, 245, 249, 0.6));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 16px 40px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+body.mode-tauri .browser-stage-shell {
+  border: none;
+  border-radius: 0;
+  background: transparent !important;
+  box-shadow: none;
+}
+
+/* ==================== 310×340 纯享桌宠根容器 ==================== */
+.widget-root {
+  position: relative;
+  width: 310px;
+  height: 340px;
+  padding: 4px 6px 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  pointer-events: none;
+}
+
+.widget-root.is-drag-returning {
+  transition: transform 0.36s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ui-interactive {
+  pointer-events: auto;
+}
+
+/* 全局轻提示 Toast */
+.floating-toast {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  z-index: 80;
+  background: #0f172a;
+  color: #fef08a;
+  font-size: 11.5px;
+  font-weight: 800;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1.5px solid #fbbf24;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.28);
+  white-space: nowrap;
+  max-width: 294px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.floating-toast.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ==================== 桌宠主舞台区 ==================== */
+.companion-zone {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.pet-canvas-wrap {
+  position: relative;
+  width: 256px;
+  height: 234px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.widget-root.is-dragging .pet-canvas-wrap {
+  cursor: grabbing;
+}
+
+.pet-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+/* 零打扰悬停动作小玩具条（平时隐藏，移入桌宠区淡入，6 枚紧凑排布总宽 ≤296px 不换行不溢出） */
+.pet-hover-toys {
+  position: absolute;
+  bottom: 74px;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: max-content;
+  max-width: 296px;
+  z-index: 12;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1.6px solid #1e293b;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.18s ease, transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.companion-zone:hover .pet-hover-toys,
+.pet-hover-toys:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.pet-toy-btn {
+  appearance: none;
+  border: 1.2px solid #cbd5e1;
+  background: #f8fafc;
+  color: #1e293b;
+  font-family: var(--font-sans);
+  font-size: 9.5px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.2px;
+  padding: 3.5px 4.5px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.pet-toy-btn:hover {
+  background: #eff6ff;
+  border-color: #2563eb;
+  color: #1d4ed8;
+  transform: translateY(-1px) scale(1.04);
+}
+
+.pet-toy-btn:active {
+  transform: translateY(1px) scale(0.96);
+}
+
+/* 底部角色切换与极简胶囊栈 */
+.companion-dock-right {
+  flex: 0 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+/* 5 位 AI 娘快速切换器（紧凑 Emoji 按钮） */
+.char-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  background: rgba(248, 250, 252, 0.96);
+  padding: 3px 5px;
+  border-radius: 999px;
+  border: 1.5px solid #cbd5e1;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+.char-switch-btn {
+  appearance: none;
+  border: 1.5px solid transparent;
+  background: transparent;
+  border-radius: 999px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1;
+  color: #475569;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.char-switch-btn:hover {
+  transform: translateY(-1px);
+  background: #ffffff;
+}
+
+.char-switch-btn.is-active {
+  background: #ffffff;
+  color: #0f172a;
+  border-color: #1e293b;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.15);
+}
+
+/* 脚下极简 Token 陪伴胶囊 */
+.foot-capsule {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 2px solid #1e293b;
+  border-radius: 999px;
+  box-shadow: 0 3px 0 rgba(30, 41, 59, 0.16), 0 6px 14px rgba(15, 23, 42, 0.12);
+  max-width: 294px;
+}
+
+.mini-drag-handle {
+  font-size: 13px;
+  font-weight: 900;
+  color: #475569;
+  cursor: grab;
+  padding: 0 1px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.capsule-divider {
+  width: 1.5px;
+  height: 13px;
+  background: #cbd5e1;
+  flex-shrink: 0;
+}
+
+.capsule-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.capsule-stat.tokens strong {
+  font-weight: 900;
+  color: #ea580c;
+}
+
+/* 实时转速条：⚡ 速率 + 迷你火花线 */
+.capsule-stat.rate {
+  gap: 4px;
+  cursor: help;
+  font-variant-numeric: tabular-nums;
+}
+
+.capsule-stat.rate strong {
+  display: inline-block;
+  min-width: 42px;
+  font-weight: 900;
+  color: #64748b;
+  transition: color 0.2s ease;
+}
+
+.rate-spark {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8.5px;
+  line-height: 1;
+  letter-spacing: -0.6px;
+  color: #94a3b8;
+  transition: color 0.2s ease;
+}
+
+.capsule-stat.rate.tier-1 strong,
+.capsule-stat.rate.tier-1 .rate-spark {
+  color: #16a34a;
+}
+
+.capsule-stat.rate.tier-2 strong,
+.capsule-stat.rate.tier-2 .rate-spark {
+  color: #2563eb;
+}
+
+.capsule-stat.rate.tier-3 strong,
+.capsule-stat.rate.tier-3 .rate-spark {
+  color: #e11d48;
+}
+
+.capsule-stat.rate.tier-3 strong {
+  text-shadow: 0 0 6px rgba(225, 29, 72, 0.45);
+}
+
+.capsule-stat.bowls {
+  gap: 1px;
+  cursor: help;
+}
+
+.capsule-stat.bowls strong {
+  font-weight: 900;
+  color: #1d4ed8;
+}
+
+/* 调试条：模拟速率 / 溜达 */
+.sim-feed-btn.sim-rate-btn {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+
+.sim-feed-btn.sim-rate-btn[data-sim-rate-key='red'] {
+  background: #fff1f2;
+  border-color: #fda4af;
+}
+
+.sim-feed-btn.sim-walk-btn {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.mini-mute-btn {
+  appearance: none;
+  border: 1.4px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.mini-mute-btn:hover {
+  background: #eff6ff;
+  border-color: #2563eb;
+  transform: scale(1.06);
+}
+
+.mini-mute-btn:active {
+  transform: scale(0.94);
+}

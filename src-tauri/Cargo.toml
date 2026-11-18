@@ -1,0 +1,28 @@
+[package]
+name = "cyber-pet-slot"
+version = "0.1.0"
+description = "TokenPet (AI娘算力桌宠) · 本地隐私安全 Token 扫描与透明桌面陪伴外壳"
+authors = ["evanpunk2077 <https://x.com/evanpunk2077>"]
+license = "MIT"
+edition = "2021"
+
+[lib]
+name = "cyber_pet_slot_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "cyber-pet-slot"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
