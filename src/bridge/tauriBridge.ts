@@ -498,6 +498,18 @@ export async function fetchTokenRate(): Promise<TokenRateSample> {
   };
 }
 
+const rateSubscribers = new Set<(s: TokenRateSample) => void>();
+
+function notifyRateSubscribers(sample: TokenRateSample): void {
+  for (const cb of rateSubscribers) {
+    try {
+      cb(sample);
+    } catch {
+      // 隔离回调异常
+    }
+  }
+}
+
 /**
  * 启动实时速率轮询（默认 1500ms），立即首拉；上一次请求未返回时跳过本轮，返回停止函数
  */
@@ -508,6 +520,7 @@ export function startRatePolling(
   let active = true;
   let inFlight = false;
   const safeInterval = Math.max(250, Math.floor(Number.isFinite(intervalMs) ? intervalMs : 1500));
+  rateSubscribers.add(cb);
 
   const pollOnce = async () => {
     if (!active || inFlight) return;
@@ -533,6 +546,7 @@ export function startRatePolling(
 
   return () => {
     active = false;
+    rateSubscribers.delete(cb);
     globalThis.clearInterval(timer);
   };
 }
@@ -548,9 +562,17 @@ export function simulateTokenRate(tokensPerSec: number, durationMs: number): voi
   const dur = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
   if (rate <= 0 || dur <= 0) {
     simRate = null;
-    return;
+  } else {
+    simRate = { tokensPerSec: rate, until: now + dur, lastAccrualAt: now, carry: 0 };
   }
-  simRate = { tokensPerSec: rate, until: now + dur, lastAccrualAt: now, carry: 0 };
+  notifyRateSubscribers({
+    tokensPerSec: simRate ? simRate.tokensPerSec : 0,
+    freshTokensPerSec: simRate ? simRate.tokensPerSec : 0,
+    windowSec: DEFAULT_RATE_WINDOW_SEC,
+    todayTokens: simTotalTokens(),
+    updatedAt: now,
+    isLive: false,
+  });
 }
 
 /** 获取溜达边界（逻辑像素）；浏览器模式返回 null */

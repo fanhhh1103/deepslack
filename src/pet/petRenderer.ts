@@ -467,7 +467,11 @@ function resolveAssetDirs(assetBaseUrl?: string): { petDir: string; iconDir: str
   return { petDir: `${raw}/pet`, iconDir: `${raw}/icons` };
 }
 
-function loadImageSafe(url: string, timeoutMs = 2200): Promise<HTMLImageElement | null> {
+function loadImageSafe(
+  url: string,
+  timeoutMs = 15000,
+  onLateLoad?: (img: HTMLImageElement) => void,
+): Promise<HTMLImageElement | null> {
   if (typeof Image === 'undefined') return Promise.resolve(null);
   return new Promise((resolve) => {
     let settled = false;
@@ -479,7 +483,17 @@ function loadImageSafe(url: string, timeoutMs = 2200): Promise<HTMLImageElement 
       resolve(res);
     };
     const timer = setTimeout(() => finish(null), timeoutMs);
-    img.onload = () => finish(img.naturalWidth > 0 ? img : null);
+    img.onload = () => {
+      if (img.naturalWidth > 0) {
+        if (settled) {
+          onLateLoad?.(img);
+        } else {
+          finish(img);
+        }
+      } else {
+        finish(null);
+      }
+    };
     img.onerror = () => finish(null);
     img.src = url;
   });
@@ -1134,8 +1148,18 @@ export async function mountPet(
     const existing = baseLoadPromises.get(id);
     if (existing) return existing;
     const task = (async () => {
-      const primary = await loadImageSafe(`${petDir}/${id}.png`);
-      sprites[id] = primary ?? (await loadImageSafe(`${iconDir}/${id}.png`));
+      const primary = await loadImageSafe(`${petDir}/${id}.png`, 15000, (lateImg) => {
+        sprites[id] = lateImg;
+        lastDrawTs = Number.NEGATIVE_INFINITY;
+      });
+      sprites[id] =
+        primary ??
+        (await loadImageSafe(`${iconDir}/${id}.png`, 10000, (lateIcon) => {
+          if (!sprites[id]) {
+            sprites[id] = lateIcon;
+            lastDrawTs = Number.NEGATIVE_INFINITY;
+          }
+        }));
       lastDrawTs = Number.NEGATIVE_INFINITY;
     })();
     baseLoadPromises.set(id, task);
@@ -1153,7 +1177,16 @@ export async function mountPet(
         loadCharWithFallback(charId),
         ...suffixes.map(async (suffix) => {
           const key = `${charId}_${suffix}`;
-          sprites[key] = await loadImageSafe(`${petDir}/${key}.png`);
+          const loaded = await loadImageSafe(`${petDir}/${key}.png`, 15000, (lateImg) => {
+            sprites[key] = lateImg;
+            lastDrawTs = Number.NEGATIVE_INFINITY;
+          });
+          if (loaded) {
+            sprites[key] = loaded;
+            lastDrawTs = Number.NEGATIVE_INFINITY;
+          } else if (!(key in sprites)) {
+            sprites[key] = null;
+          }
         }),
       ]);
       lastDrawTs = Number.NEGATIVE_INFINITY;
@@ -1162,8 +1195,24 @@ export async function mountPet(
     return task;
   };
 
-  // 先加载默认角色（dafeiyu）基础图与它的 9 张动作贴图包，并在后台预加载其余 4 位角色基础立绘
-  await ensureCharacterPackLoaded('dafeiyu');
+  // 先启动默认角色（dafeiyu）全动作包加载；公网慢速 CDN 下不长期阻塞首帧交互，其余贴图加载完成自动热替换
+  const initialPackPromise = ensureCharacterPackLoaded('dafeiyu');
+  const isAuditMode =
+    typeof window !== 'undefined' &&
+    typeof window.location?.search === 'string' &&
+    new URLSearchParams(window.location.search).get('audit') === '1';
+  if (isAuditMode) {
+    await initialPackPromise;
+  } else {
+    const baseReady = loadCharWithFallback('dafeiyu');
+    await Promise.race([
+      initialPackPromise,
+      Promise.all([
+        Promise.race([baseReady, new Promise<void>((r) => setTimeout(r, 900))]),
+        new Promise<void>((r) => setTimeout(r, 350)),
+      ]),
+    ]);
+  }
   void Promise.all(
     ALL_CHARS.filter((c) => c !== 'dafeiyu').map((c) => loadCharWithFallback(c)),
   );

@@ -161,6 +161,7 @@ export class CyberPetApp {
   private selfMoveUntil = 0;
   private lastTickAt = 0;
 
+  private stageShellEl: HTMLElement | null = null;
   private widgetRootEl!: HTMLElement;
   private toastEl!: HTMLElement;
   private charSwitcherEl!: HTMLElement;
@@ -178,6 +179,8 @@ export class CyberPetApp {
   private readonly boundDragPointerMove: (ev: PointerEvent) => void;
   private readonly boundDragPointerEnd: (ev: PointerEvent) => void;
   private readonly boundCanvasHover: (ev: PointerEvent) => void;
+  private readonly boundWindowBlur: () => void;
+  private readonly boundWindowResize: () => void;
 
   constructor(rootEl: HTMLElement) {
     this.rootEl = rootEl;
@@ -208,11 +211,14 @@ export class CyberPetApp {
     this.boundDragPointerMove = (ev) => this.handlePetDragPointerMove(ev);
     this.boundDragPointerEnd = (ev) => this.handlePetDragPointerEnd(ev);
     this.boundCanvasHover = (ev) => this.handleCanvasHover(ev);
+    this.boundWindowBlur = () => this.finishActiveDrag();
+    this.boundWindowResize = () => this.syncBrowserWalkRange();
   }
 
   public async mount(): Promise<void> {
     this.applyModeClasses();
     this.buildShellDom();
+    this.syncBrowserWalkRange();
     this.bindEvents();
     this.renderAllDynamic();
 
@@ -299,9 +305,12 @@ export class CyberPetApp {
     this.petCanvasEl?.removeEventListener('pointerdown', this.boundDragPointerDown);
     this.petCanvasEl?.removeEventListener('pointermove', this.boundCanvasHover);
     this.petCanvasEl?.removeEventListener('pointerenter', this.boundCanvasHover);
+    this.petCanvasEl?.removeEventListener('lostpointercapture', this.boundDragPointerEnd);
     window.removeEventListener('pointermove', this.boundDragPointerMove);
     window.removeEventListener('pointerup', this.boundDragPointerEnd);
     window.removeEventListener('pointercancel', this.boundDragPointerEnd);
+    window.removeEventListener('blur', this.boundWindowBlur);
+    window.removeEventListener('resize', this.boundWindowResize);
     window.removeEventListener('pointermove', this.boundPointerMove);
   }
 
@@ -410,12 +419,24 @@ export class CyberPetApp {
       ${simBarHtml}
     `;
 
+    this.stageShellEl = this.rootEl.querySelector('.browser-stage-shell');
     this.widgetRootEl = this.rootEl.querySelector('#widget-root')!;
     this.toastEl = this.rootEl.querySelector('#floating-toast')!;
     this.charSwitcherEl = this.rootEl.querySelector('#char-switcher')!;
     this.footCapsuleEl = this.rootEl.querySelector('#foot-capsule')!;
     this.petCanvasEl = this.rootEl.querySelector('#pet-canvas')!;
     this.petHoverToysEl = this.rootEl.querySelector('#pet-hover-toys')!;
+  }
+
+  private syncBrowserWalkRange(): void {
+    if (this.isTauri) return;
+    const shellW = this.stageShellEl?.clientWidth || 310;
+    const slack = Math.max(24, Math.min(130, Math.floor((shellW - 260) * 0.5)));
+    this.walkRange = { minX: -slack, maxX: slack };
+    if (this.walkX < this.walkRange.minX || this.walkX > this.walkRange.maxX) {
+      this.walkX = Math.max(this.walkRange.minX, Math.min(this.walkRange.maxX, this.walkX));
+      this.applyWidgetTransform();
+    }
   }
 
   private bindEvents(): void {
@@ -430,6 +451,7 @@ export class CyberPetApp {
         if (rateBtn) {
           const tps = Number(rateBtn.dataset.simRate || 0);
           simulateTokenRate(tps, tps > 0 ? SIM_RATE_DURATION_MS : 0);
+          this.director.previewRate(tps, performance.now());
           playSfx('click');
           this.showToast(
             tps > 0
@@ -441,6 +463,10 @@ export class CyberPetApp {
 
         if (target.closest('#btn-sim-walk')) {
           const now = performance.now();
+          this.syncBrowserWalkRange();
+          if (this.pet && !this.dragState?.active) {
+            this.pet.setMood('idle');
+          }
           this.director.forceWalk(now, this.walkX, this.walkRange);
           this.scheduleTick(0);
           this.showToast('🚶 溜达一下～');
@@ -470,9 +496,14 @@ export class CyberPetApp {
 
     // 揪后领拖拽物理闭环（> 5px 判定为拖拽）
     this.petCanvasEl.addEventListener('pointerdown', this.boundDragPointerDown);
+    this.petCanvasEl.addEventListener('lostpointercapture', this.boundDragPointerEnd);
     window.addEventListener('pointermove', this.boundDragPointerMove, { passive: true });
     window.addEventListener('pointerup', this.boundDragPointerEnd, { passive: true });
     window.addEventListener('pointercancel', this.boundDragPointerEnd, { passive: true });
+    window.addEventListener('blur', this.boundWindowBlur);
+    if (!this.isTauri) {
+      window.addEventListener('resize', this.boundWindowResize, { passive: true });
+    }
 
     // 摸鱼抓包：鼠标移入桌宠身体
     this.petCanvasEl.addEventListener('pointermove', this.boundCanvasHover, { passive: true });
@@ -767,8 +798,10 @@ export class CyberPetApp {
       this.pet.feedDragDelta(dx, dy);
       this.scheduleTauriDragIdleEnd(160);
     } else {
-      const nextX = Math.max(-48, Math.min(48, this.browserDragOffset.x + dx));
-      const nextY = Math.max(-36, Math.min(16, this.browserDragOffset.y + dy));
+      const minDragX = this.walkRange.minX - this.walkX;
+      const maxDragX = this.walkRange.maxX - this.walkX;
+      const nextX = Math.max(minDragX, Math.min(maxDragX, this.browserDragOffset.x + dx));
+      const nextY = Math.max(-42, Math.min(16, this.browserDragOffset.y + dy));
       this.browserDragOffset = { x: nextX, y: nextY };
       this.applyWidgetTransform();
       this.pet.feedDragDelta(dx, dy);
@@ -851,6 +884,10 @@ export class CyberPetApp {
     this.director.noteInteraction(performance.now());
 
     if (!ds.isTauriMode) {
+      this.walkX = Math.max(
+        this.walkRange.minX,
+        Math.min(this.walkRange.maxX, this.walkX + this.browserDragOffset.x),
+      );
       this.widgetRootEl.classList.add('is-drag-returning');
       this.browserDragOffset = { x: 0, y: 0 };
       this.applyWidgetTransform();

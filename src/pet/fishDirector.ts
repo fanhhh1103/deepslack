@@ -101,6 +101,40 @@ export class FishDirector {
     this.onChange();
   }
 
+  /** 浏览器试玩快捷模拟：跳过 4.5s EMA 预热，立刻切入目标档位并唤醒桌宠 */
+  previewRate(tps: number, now: number): void {
+    const raw = Number.isFinite(tps) && tps > 0 ? tps : 0;
+    this.displayRate = raw;
+    this.totalRate = raw;
+    this.samples.push(raw);
+    if (this.samples.length > SPARK_SAMPLES) this.samples.splice(0, this.samples.length - SPARK_SAMPLES);
+
+    this.walker.interrupt(now);
+    this.pet?.setLocomotion(0);
+    if (raw <= 0) {
+      this.brain.smoother.reset();
+      this.brain.smoothed = 0;
+      this.brain.tracker.tier = 0;
+      this.brain.slacking = false;
+      this.pet?.setRateTier(0, 0);
+      this.pet?.setBaseMood('idle');
+      this.pet?.setMood('idle');
+    } else {
+      // 跳过尖峰截断，让试玩按钮一按即达对应档位
+      this.brain.smoother.value = raw;
+      const events = this.brain.pushRate(raw, now);
+      this.pet?.setRateTier(this.brain.tier, this.brain.smoothed);
+      this.pet?.setBaseMood(this.baseMood());
+      if (this.brain.tier >= 3) {
+        this.pet?.setMood('overheat', FISH_LINES.overheat, 1400);
+      } else {
+        this.pet?.setMood('work');
+      }
+      this.applyEvents(events, now);
+    }
+    this.onChange();
+  }
+
   /** 摸鱼中鼠标移入桌宠 → 抓包 */
   handleHover(now: number): boolean {
     if (!this.pet || this.pet.isBusy() || !this.brain.tryCatch(now)) return false;
