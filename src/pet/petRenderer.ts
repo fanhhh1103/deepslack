@@ -4,12 +4,14 @@ import { WALK_SPEED_PX } from './fishBrain';
 import { playSfx } from './petAudio';
 import {
   drawBlueWhiteBowl,
+  drawBonkShockwave,
   drawBug,
   drawDizzyOrbit,
   drawDustPuff,
   drawHeadSteam,
   drawIcedCoffee,
   drawKeyboardRainbow,
+  drawOverheatGlow,
   drawPattingHand,
   drawSoapBubble,
   drawToyHammer,
@@ -25,6 +27,7 @@ import {
   StrideClock,
   volumePreservingScale,
   type PostureFamily,
+  type PostureTransitionStyle,
   type SpriteBlendKind,
 } from './petMotion';
 
@@ -187,26 +190,89 @@ const ACTION_SPRITE_SUFFIXES = [
 const FUN_SPRITE_SUFFIXES = [
   'walk_a',
   'walk_b',
+  'walk_c',
+  'walk_d',
+  'work_c',
+  'work_d',
+  'music_a',
+  'music_b',
+  'music_c',
+  'music_d',
+  'eat_c',
+  'eat_d',
   'slack',
   'caught',
   'overheat',
+  'overheat_b',
   'tired',
   'scared',
   'coffee',
   'cry',
   'crouch',
+  'sit_trans',
   'drowsy',
   'peek',
   'dizzy',
   'bonk_a',
+  'bonk_mid',
   'bonk_b',
-  'music_a',
-  'music_b',
+  'idle_b',
 ] as const;
 const FUN_SPRITE_CHARS: readonly PetCharId[] = ['dafeiyu'];
 type ActionSpriteSuffix =
   | (typeof ACTION_SPRITE_SUFFIXES)[number]
   | (typeof FUN_SPRITE_SUFFIXES)[number];
+
+/**
+ * 大肥鱼各姿态水平重心锚点（归一化 0..1，排除长尾巴横向外伸），
+ * 消除待机/走路/摸鱼/眩晕切换时的 10-18px 水平横移跳变；其余角色默认 0.5。
+ */
+export const DAFEIYU_ANCHOR_X: Record<string, number> = {
+  dafeiyu: 0.473,
+  dafeiyu_blink: 0.473,
+  dafeiyu_idle_b: 0.473,
+  dafeiyu_sit_trans: 0.41,
+  dafeiyu_pat: 0.473,
+  dafeiyu_happy: 0.419,
+  dafeiyu_dangle: 0.491,
+  dafeiyu_sleep: 0.44,
+  dafeiyu_tired: 0.403,
+  dafeiyu_drowsy: 0.471,
+  dafeiyu_crouch: 0.463,
+  dafeiyu_slack: 0.376,
+  dafeiyu_caught: 0.422,
+  dafeiyu_scared: 0.526,
+  dafeiyu_cry: 0.426,
+  dafeiyu_coffee: 0.458,
+  dafeiyu_dizzy: 0.427,
+  dafeiyu_peek: 0.644,
+  dafeiyu_overheat: 0.42,
+  dafeiyu_overheat_b: 0.42,
+  dafeiyu_bonk_a: 0.596,
+  dafeiyu_bonk_mid: 0.564,
+  dafeiyu_bonk_b: 0.583,
+  dafeiyu_walk_a: 0.583,
+  dafeiyu_walk_b: 0.583,
+  dafeiyu_walk_c: 0.583,
+  dafeiyu_walk_d: 0.583,
+  dafeiyu_work_a: 0.443,
+  dafeiyu_work_b: 0.443,
+  dafeiyu_work_c: 0.443,
+  dafeiyu_work_d: 0.443,
+  dafeiyu_music_a: 0.385,
+  dafeiyu_music_b: 0.385,
+  dafeiyu_music_c: 0.385,
+  dafeiyu_music_d: 0.385,
+  dafeiyu_eat_a: 0.418,
+  dafeiyu_eat_b: 0.418,
+  dafeiyu_eat_c: 0.418,
+  dafeiyu_eat_d: 0.418,
+};
+
+export function getSpriteAnchorX(spriteKey: string): number {
+  const val = DAFEIYU_ANCHOR_X[spriteKey];
+  return typeof val === 'number' && Number.isFinite(val) ? val : 0.5;
+}
 
 const TIMED_MOODS: ReadonlySet<PetMood> = new Set<PetMood>([
   'eat',
@@ -238,8 +304,16 @@ const COFFEE_BOOST_MS = 10_000;
 const PEEK_BUBBLE_MS = 1500;
 const MUSIC_BEAT_HZ = 1.12;
 const DIZZY_DURATION_MS = 2800;
-const BONK_WINDUP_MS = 360;
+const BONK_WINDUP_MS = 300;
+const BONK_MID_MS = 75;
 const BONK_SLAM_MS = 520;
+const BONK_HITSTOP_MS = 55;
+const BONK_SHOCKWAVE_DURATION = 0.36;
+const SPRITE_MIN_HOLD_MS = 48;
+const IDLE_VARIANT_GAP_MIN_MS = 6000;
+const IDLE_VARIANT_GAP_MAX_MS = 9000;
+const IDLE_VARIANT_HOLD_MIN_MS = 1600;
+const IDLE_VARIANT_HOLD_MAX_MS = 2400;
 
 const FUN_LINES = {
   coffee: '冰美式续命！今天的我元气 1.4 倍速！',
@@ -1180,6 +1254,7 @@ export async function mountPet(
   let rateTier: 0 | 1 | 2 | 3 = 0;
   let rateTps = 0;
   let beatPhase = 0;
+  let workFrameIdx = 0;
   let workFrameA = true;
   let lastBeatSfxAt = 0;
   let fakeTypingUntil = 0;
@@ -1200,12 +1275,33 @@ export async function mountPet(
   let pendingBowlFlies = 0;
   let scootX = 0;
   let scootTarget = 0;
-  let bugHuntPhase: 'none' | 'scared' | 'approach' | 'windup' | 'slam' = 'none';
+  let bugHuntPhase: 'none' | 'scared' | 'approach' | 'windup' | 'midswing' | 'slam' = 'none';
   let bugHuntSlot: FallingItem | null = null;
   let bugHuntUntil = 0;
   let bugHuntDir: 1 | -1 = 1;
+  let lastCatchAt = Number.NEGATIVE_INFINITY;
+  let suppressNextTurnHop = false;
+  let bonkHitstopUntil = 0;
+  let bonkShakeAmp = 0;
+  let bonkShakeElapsed = 0;
+  let bonkDirectSlammed = false;
+  const bonkShockwave = {
+    active: false,
+    x: 0,
+    y: 0,
+    elapsed: 0,
+    duration: BONK_SHOCKWAVE_DURATION,
+    dir: 1 as 1 | -1,
+  };
+  let idleVariantActive = false;
+  let idleVariantStartedAt = 0;
+  let idleVariantEndAt = 0;
+  let idleVariantDir: 1 | -1 = 1;
+  let nextIdleVariantAt =
+    nowMs() + IDLE_VARIANT_GAP_MIN_MS + Math.random() * (IDLE_VARIANT_GAP_MAX_MS - IDLE_VARIANT_GAP_MIN_MS);
   let slackVariant: 'comic' | 'music' | 'bubble' | 'daze' = 'comic';
   let slackVariantUntil = 0;
+  let spriteSwapPending = false;
   let fxTimer = 0;
   let lastLayout = { centerX: 128, topY: 40, totalH: 170, baseW: 160, footY: 225 };
   const lastTelemetry: PetMotionTelemetry = {
@@ -1349,6 +1445,7 @@ export async function mountPet(
     moodRevertAt = 0;
     drowsyEnteredAt = now;
     drowsyWakeStretch = false;
+    idleVariantActive = false;
     isBlinking = false;
     pendingSecondBlinkAt = 0;
     lastDrawTs = Number.NEGATIVE_INFINITY;
@@ -1374,6 +1471,7 @@ export async function mountPet(
     currentMood = 'sleep';
     moodRevertAt = 0;
     drowsyWakeStretch = false;
+    idleVariantActive = false;
     isBlinking = false;
     pendingSecondBlinkAt = 0;
     lastDrawTs = Number.NEGATIVE_INFINITY;
@@ -1398,8 +1496,16 @@ export async function mountPet(
     const wasSleep = currentMood === 'sleep';
     currentMood = mood;
     drowsyWakeStretch = false;
+    idleVariantActive = false;
+    if (mood === 'idle') {
+      nextIdleVariantAt =
+        now + IDLE_VARIANT_GAP_MIN_MS + Math.random() * (IDLE_VARIANT_GAP_MAX_MS - IDLE_VARIANT_GAP_MIN_MS);
+    }
     if (mood === 'drowsy') drowsyEnteredAt = now;
-    if (mood === 'bonk') bonkStartedAt = now;
+    if (mood === 'bonk') {
+      bonkStartedAt = now;
+      bonkDirectSlammed = false;
+    }
     if (mood === 'eat') eatPhaseStart = animElapsed;
     if (mood === 'music') musicPhaseStart = animElapsed;
     if (mood !== 'scared' && mood !== 'bonk') {
@@ -1448,6 +1554,8 @@ export async function mountPet(
 
     if (mood === 'work') {
       lastWorkFrame = -1;
+      workFrameIdx = 0;
+      workFrameA = true;
       workBeatAge = 0;
     }
     if (mood !== 'work') fakeTypingUntil = 0;
@@ -1509,6 +1617,8 @@ export async function mountPet(
       moodRevertAt = 0;
       if (mood === 'work') {
         lastWorkFrame = -1;
+        workFrameIdx = 0;
+        workFrameA = true;
         workBeatAge = 0;
       }
       lastDrawTs = Number.NEGATIVE_INFINITY;
@@ -1527,6 +1637,8 @@ export async function mountPet(
     moodRevertAt = now + Math.max(400, durationMs);
     fakeTypingUntil = moodRevertAt;
     lastWorkFrame = -1;
+    workFrameIdx = 0;
+    workFrameA = true;
     workBeatAge = 0;
   };
 
@@ -1679,6 +1791,7 @@ export async function mountPet(
       isBlinking = false;
       pendingSecondBlinkAt = 0;
       lastDrawnBlink = false;
+      spriteSwapPending = false;
       spriteBlender.reset();
       postureBridge.reset(moodToPosture(currentMood));
       lastDrawTs = Number.NEGATIVE_INFINITY;
@@ -1820,7 +1933,7 @@ export async function mountPet(
         return;
       }
       const clickedBug = findGroundBugAt(lx, ly);
-      if (clickedBug && bugHuntPhase !== 'windup' && bugHuntPhase !== 'slam') {
+      if (clickedBug && bugHuntPhase !== 'windup' && bugHuntPhase !== 'midswing' && bugHuntPhase !== 'slam') {
         markInteracted(now);
         bugHuntSlot = clickedBug;
         bugHuntPhase = 'approach';
@@ -1886,7 +1999,27 @@ export async function mountPet(
     return { img, key: `${currentChar}_${suffix}` };
   };
 
+  const pickCycle4 = (
+    idx: number,
+    a: ActionSpriteSuffix,
+    b: ActionSpriteSuffix,
+    c: ActionSpriteSuffix,
+    d: ActionSpriteSuffix,
+    fallbackA = idx % 2 === 0,
+  ): { img: HTMLImageElement; key: string } | null => {
+    const sA = pickCharSprite(a);
+    const sB = pickCharSprite(b);
+    const sC = pickCharSprite(c);
+    const sD = pickCharSprite(d);
+    if (sA && sB && sC && sD) {
+      const frames = [sA, sB, sC, sD];
+      return frames[((idx % 4) + 4) % 4];
+    }
+    return (fallbackA ? sA : sB) ?? sA ?? sB ?? sC ?? sD;
+  };
+
   let currentStrideFrameA = true;
+  let currentStrideFrameIndex: 0 | 1 | 2 | 3 = 0;
 
   const isScooting = (): boolean =>
     Math.abs(scootTarget - scootX) > 2.2 || Math.abs(scootSpring.yd) > 8;
@@ -1902,6 +2035,7 @@ export async function mountPet(
     !isDragging &&
     !isDropping &&
     bugHuntPhase !== 'windup' &&
+    bugHuntPhase !== 'midswing' &&
     bugHuntPhase !== 'slam' &&
     ((locoDir !== 0 &&
       (currentMood === 'idle' ||
@@ -1913,6 +2047,7 @@ export async function mountPet(
   const chooseActiveSprite = (
     t: number,
     useCrouch: boolean,
+    useSitTrans: boolean,
     now: number,
   ): SpritePickResult => {
     const baseImg = sprites[currentChar] ?? null;
@@ -1933,18 +2068,28 @@ export async function mountPet(
       const crouchPick = pickCharSprite('crouch');
       if (crouchPick) return { ...crouchPick, kind: 'pose' };
     }
+    if (useSitTrans) {
+      const sitTransPick = pickCharSprite('sit_trans');
+      if (sitTransPick) return { ...sitTransPick, kind: 'pose' };
+    }
     if (isWalkingVisual()) {
       if (peeking && locoDir !== 0) {
         const peekPick = pickCharSprite('peek');
         if (peekPick) return { ...peekPick, kind: 'pose' };
       }
-      const wa = pickCharSprite('walk_a');
-      const wb = pickCharSprite('walk_b');
-      if (wa || wb) {
+      const walkPick = pickCycle4(
+        currentStrideFrameIndex,
+        'walk_a',
+        'walk_b',
+        'walk_c',
+        'walk_d',
+        currentStrideFrameA,
+      );
+      if (walkPick) {
         if (peeking && locoDir !== 0) {
-          return { ...(wa ?? wb)!, kind: 'pose' };
+          return { ...(pickCharSprite('walk_a') ?? walkPick), kind: 'pose' };
         }
-        return { ...((currentStrideFrameA ? wa : wb) ?? wa ?? wb)!, kind: 'step' };
+        return { ...walkPick, kind: 'step' };
       }
       return { ...basePick, kind: 'pose' };
     }
@@ -1952,20 +2097,35 @@ export async function mountPet(
       case 'pat':
         return { ...(pickCharSprite('pat') ?? pickCharSprite('happy') ?? basePick), kind: 'pose' };
       case 'work': {
-        const workA = pickCharSprite('work_a');
-        const workB = pickCharSprite('work_b');
-        return { ...((workFrameA ? workA : workB) ?? workA ?? workB ?? basePick), kind: 'step' };
+        if (moodRevertAt === 0 && rateTier >= 3) {
+          const ohA = pickCharSprite('overheat');
+          const ohB = pickCharSprite('overheat_b');
+          if (ohA || ohB) {
+            return { ...((workFrameIdx % 2 === 0 ? ohA : ohB) ?? ohA ?? ohB)!, kind: 'step' };
+          }
+        }
+        return {
+          ...(pickCycle4(workFrameIdx, 'work_a', 'work_b', 'work_c', 'work_d', workFrameA) ?? basePick),
+          kind: 'step',
+        };
       }
       case 'overheat': {
-        const workA = pickCharSprite('work_a');
-        const workB = pickCharSprite('work_b');
-        return { ...(pickCharSprite('overheat') ?? (workFrameA ? workA : workB) ?? workA ?? basePick), kind: 'step' };
+        const ohA = pickCharSprite('overheat');
+        const ohB = pickCharSprite('overheat_b');
+        if (ohA || ohB) {
+          return { ...((workFrameIdx % 2 === 0 ? ohA : ohB) ?? ohA ?? ohB)!, kind: 'step' };
+        }
+        return {
+          ...(pickCycle4(workFrameIdx, 'work_a', 'work_b', 'work_c', 'work_d', workFrameA) ?? basePick),
+          kind: 'step',
+        };
       }
       case 'eat': {
-        const frameA = Math.floor(Math.max(0, t - eatPhaseStart) / 0.42) % 2 === 0;
-        const eatA = pickCharSprite('eat_a');
-        const eatB = pickCharSprite('eat_b');
-        return { ...((frameA ? eatA : eatB) ?? eatA ?? eatB ?? basePick), kind: 'beat' };
+        const eatIdx = Math.floor(Math.max(0, t - eatPhaseStart) / 0.45);
+        return {
+          ...(pickCycle4(eatIdx, 'eat_a', 'eat_b', 'eat_c', 'eat_d') ?? basePick),
+          kind: 'beat',
+        };
       }
       case 'sleep':
         return { ...(pickCharSprite('sleep') ?? basePick), kind: 'pose' };
@@ -1976,9 +2136,9 @@ export async function mountPet(
         const drowsyPick = pickCharSprite('drowsy');
         if (drowsyPick) {
           const cycleMs = Math.max(0, now - drowsyEnteredAt) % 2400;
-          if (cycleMs > 2180) {
-            const nap = pickCharSprite('sleep') ?? pickCharSprite('blink') ?? drowsyPick;
-            return { ...nap, kind: nap.key.endsWith('_blink') ? 'blink' : 'pose' };
+          if (cycleMs > 2140) {
+            const nodBlink = pickCharSprite('blink') ?? drowsyPick;
+            return { ...nodBlink, kind: nodBlink.key.endsWith('_blink') ? 'blink' : 'pose' };
           }
           return poseOrBlinkEnd(drowsyPick);
         }
@@ -1993,30 +2153,42 @@ export async function mountPet(
           kind: 'pose',
         };
       case 'bonk': {
+        const wasBonkMid = spriteBlender.key.endsWith('_bonk_mid');
         if (bugHuntPhase === 'windup') {
           return { ...(pickCharSprite('bonk_a') ?? pickCharSprite('happy') ?? basePick), kind: 'pose' };
         }
-        if (bugHuntPhase === 'slam') {
-          return { ...(pickCharSprite('bonk_b') ?? pickCharSprite('work_b') ?? basePick), kind: 'pose' };
+        if (bugHuntPhase === 'midswing') {
+          return {
+            ...(pickCharSprite('bonk_mid') ?? pickCharSprite('bonk_a') ?? pickCharSprite('happy') ?? basePick),
+            kind: 'smear',
+          };
         }
-        const inWindup = now - bonkStartedAt < BONK_WINDUP_MS;
+        if (bugHuntPhase === 'slam') {
+          return {
+            ...(pickCharSprite('bonk_b') ?? pickCharSprite('work_b') ?? basePick),
+            kind: wasBonkMid ? 'smear' : 'pose',
+          };
+        }
+        const bonkAge = Math.max(0, now - bonkStartedAt);
+        if (bonkAge < BONK_WINDUP_MS) {
+          return { ...(pickCharSprite('bonk_a') ?? pickCharSprite('happy') ?? basePick), kind: 'pose' };
+        }
+        if (bonkAge < BONK_WINDUP_MS + BONK_MID_MS) {
+          const midPick = pickCharSprite('bonk_mid');
+          if (midPick) return { ...midPick, kind: 'smear' };
+        }
         return {
-          ...((inWindup ? pickCharSprite('bonk_a') : pickCharSprite('bonk_b')) ??
-            pickCharSprite('bonk_b') ??
+          ...(pickCharSprite('bonk_b') ??
             pickCharSprite('bonk_a') ??
             pickCharSprite('happy') ??
             basePick),
-          kind: 'pose',
+          kind: wasBonkMid ? 'smear' : 'pose',
         };
       }
       case 'music': {
-        const musicA = pickCharSprite('music_a');
-        const musicB = pickCharSprite('music_b');
-        const mFrameA = Math.floor(Math.max(0, t - musicPhaseStart) * MUSIC_BEAT_HZ) % 2 === 0;
+        const musicIdx = Math.floor(Math.max(0, t - musicPhaseStart) * MUSIC_BEAT_HZ);
         return {
-          ...((mFrameA ? musicA : musicB) ??
-            musicA ??
-            musicB ??
+          ...(pickCycle4(musicIdx, 'music_a', 'music_b', 'music_c', 'music_d') ??
             pickCharSprite('happy') ??
             pickCharSprite('pat') ??
             basePick),
@@ -2027,12 +2199,9 @@ export async function mountPet(
         return { ...(pickCharSprite('happy') ?? pickCharSprite('pat') ?? basePick), kind: 'pose' };
       case 'slack': {
         if (slackVariant === 'music') {
-          const musicA = pickCharSprite('music_a');
-          const musicB = pickCharSprite('music_b');
-          if (musicA || musicB) {
-            const mFrameA = Math.floor(Math.max(0, t - musicPhaseStart) * MUSIC_BEAT_HZ) % 2 === 0;
-            return { ...((mFrameA ? musicA : musicB) ?? musicA ?? musicB)!, kind: 'beat' };
-          }
+          const musicIdx = Math.floor(Math.max(0, t - musicPhaseStart) * MUSIC_BEAT_HZ);
+          const musicPick = pickCycle4(musicIdx, 'music_a', 'music_b', 'music_c', 'music_d');
+          if (musicPick) return { ...musicPick, kind: 'beat' };
           return { ...(pickCharSprite('happy') ?? basePick), kind: 'pose' };
         }
         if (slackVariant === 'comic') {
@@ -2060,6 +2229,10 @@ export async function mountPet(
           const blinkPick = pickCharSprite('blink');
           return { ...(blinkPick ?? basePick), kind: blinkPick ? 'blink' : 'pose' };
         }
+        if (idleVariantActive) {
+          const idleBPick = pickCharSprite('idle_b');
+          if (idleBPick) return poseOrBlinkEnd(idleBPick);
+        }
         return poseOrBlinkEnd(basePick);
       }
       default:
@@ -2069,6 +2242,7 @@ export async function mountPet(
 
   const handleCatch = (kind: DropKind, source: DropSource, now: number): void => {
     const meta = CHAR_META[currentChar];
+    lastCatchAt = now;
     if (kind === 'rice') {
       playSfx('eat');
       setMood('eat', meta.eatLine, 1800);
@@ -2100,8 +2274,70 @@ export async function mountPet(
     bugHuntUntil = now + BONK_WINDUP_MS;
     bonkStartedAt = now;
     currentMood = 'bonk';
-    moodRevertAt = now + BONK_WINDUP_MS + BONK_SLAM_MS;
+    moodRevertAt = now + BONK_WINDUP_MS + (getCharSprite('bonk_mid') ? BONK_MID_MS : 0) + BONK_SLAM_MS;
     squashSpring.impulse(-1.3);
+  };
+
+  const triggerBonkImpact = (now: number, cw: number, footY: number, launchBugs: boolean): void => {
+    bonkHitstopUntil = now + BONK_HITSTOP_MS;
+    bonkShakeAmp = 2.6;
+    bonkShakeElapsed = 0;
+    squashSpring.impulse(1.4);
+    playSfx('bonk');
+
+    const impactX = cw * 0.5 + scootX + bugHuntDir * 22;
+    bonkShockwave.active = true;
+    bonkShockwave.x = impactX;
+    bonkShockwave.y = footY - 12;
+    bonkShockwave.elapsed = 0.012;
+    bonkShockwave.duration = BONK_SHOCKWAVE_DURATION;
+    bonkShockwave.dir = bugHuntDir;
+
+    if (!launchBugs) return;
+
+    bugHuntPhase = 'slam';
+    bugHuntUntil = now + BONK_SLAM_MS;
+    currentMood = 'bonk';
+    moodRevertAt = bugHuntUntil;
+    showBubble(FUN_LINES.bonk, 1600, now);
+
+    let hitAny = false;
+    for (const d of dropSlots) {
+      if (d.active && d.kind === 'bug' && d.phase === 'ground') {
+        if (d === bugHuntSlot || Math.abs(d.x - impactX) <= 52) {
+          hitAny = true;
+          d.phase = 'fly';
+          d.t = 0;
+          d.vx = bugHuntDir * (240 + Math.random() * 80);
+          d.vy = -(250 + Math.random() * 60);
+          d.vr = 18;
+          bonkShockwave.x = d.x;
+          bonkShockwave.y = d.y - 4;
+          for (let i = 0; i < 6; i++) {
+            pushParticle(
+              particles,
+              i % 2 === 0 ? 'bang' : 'spark',
+              d.x,
+              d.y - 6,
+              (Math.random() - 0.5) * 150,
+              -(50 + Math.random() * 80),
+              0.5,
+              i % 2 === 0 ? 5.5 : 3.2,
+              i % 2 === 0 ? '#facc15' : '#38bdf8',
+            );
+          }
+          pushParticle(particles, 'dust', d.x - 6, footY - 2, -26, -10, 0.4, 6.5, '#f8fafc');
+          pushParticle(particles, 'dust', d.x + 6, footY - 2, 26, -10, 0.4, 6.5, '#f8fafc');
+        }
+      }
+    }
+    if (!hitAny && bugHuntSlot && bugHuntSlot.active && bugHuntSlot.kind === 'bug') {
+      bugHuntSlot.phase = 'fly';
+      bugHuntSlot.t = 0;
+      bugHuntSlot.vx = bugHuntDir * 260;
+      bugHuntSlot.vy = -260;
+      bugHuntSlot.vr = 18;
+    }
   };
 
   const updateDrops = (dtReal: number, now: number, cw: number, ch: number, footY: number): void => {
@@ -2186,50 +2422,17 @@ export async function mountPet(
     }
 
     if (bugHuntPhase === 'windup' && now >= bugHuntUntil && !isDragging && !isDropping) {
-      bugHuntPhase = 'slam';
-      bugHuntUntil = now + BONK_SLAM_MS;
-      currentMood = 'bonk';
-      moodRevertAt = bugHuntUntil;
-      squashSpring.impulse(1.4);
-      playSfx('bonk');
-      showBubble(FUN_LINES.bonk, 1600, now);
-
-      const impactX = cw * 0.5 + scootX + bugHuntDir * 22;
-      let hitAny = false;
-      for (const d of dropSlots) {
-        if (d.active && d.kind === 'bug' && d.phase === 'ground') {
-          if (d === bugHuntSlot || Math.abs(d.x - impactX) <= 52) {
-            hitAny = true;
-            d.phase = 'fly';
-            d.t = 0;
-            d.vx = bugHuntDir * (240 + Math.random() * 80);
-            d.vy = -(250 + Math.random() * 60);
-            d.vr = 18;
-            for (let i = 0; i < 6; i++) {
-              pushParticle(
-                particles,
-                i % 2 === 0 ? 'bang' : 'spark',
-                d.x,
-                d.y - 6,
-                (Math.random() - 0.5) * 150,
-                -(50 + Math.random() * 80),
-                0.5,
-                i % 2 === 0 ? 5.5 : 3.2,
-                i % 2 === 0 ? '#facc15' : '#38bdf8',
-              );
-            }
-            pushParticle(particles, 'dust', d.x - 6, footY - 2, -26, -10, 0.4, 6.5, '#f8fafc');
-            pushParticle(particles, 'dust', d.x + 6, footY - 2, 26, -10, 0.4, 6.5, '#f8fafc');
-          }
-        }
+      if (getCharSprite('bonk_mid')) {
+        bugHuntPhase = 'midswing';
+        bugHuntUntil = now + BONK_MID_MS;
+        currentMood = 'bonk';
+        moodRevertAt = now + BONK_MID_MS + BONK_SLAM_MS;
+        squashSpring.impulse(0.35);
+      } else {
+        triggerBonkImpact(now, cw, footY, true);
       }
-      if (!hitAny && bugHuntSlot && bugHuntSlot.active && bugHuntSlot.kind === 'bug') {
-        bugHuntSlot.phase = 'fly';
-        bugHuntSlot.t = 0;
-        bugHuntSlot.vx = bugHuntDir * 260;
-        bugHuntSlot.vy = -260;
-        bugHuntSlot.vr = 18;
-      }
+    } else if (bugHuntPhase === 'midswing' && now >= bugHuntUntil && !isDragging && !isDropping) {
+      triggerBonkImpact(now, cw, footY, true);
     }
 
     if (bugHuntPhase === 'slam' && now >= bugHuntUntil) {
@@ -2241,6 +2444,7 @@ export async function mountPet(
         bugHuntPhase = 'none';
         bugHuntSlot = null;
         scootTarget = 0;
+        suppressNextTurnHop = true;
         currentMood = baseMood;
         moodRevertAt = 0;
       }
@@ -2329,7 +2533,41 @@ export async function mountPet(
       drowsyWakeStretch = false;
       if (baseMood === 'work') {
         lastWorkFrame = -1;
+        workFrameIdx = 0;
+        workFrameA = true;
         workBeatAge = 0;
+      }
+    }
+
+    // 待机微生命感（0-8s 待机期间每隔 6-9s 柔缓切至 idle_b 停留 1.6-2.4s）
+    const canIdleVariant =
+      currentMood === 'idle' &&
+      locoDir === 0 &&
+      !isDragging &&
+      !isDropping &&
+      !hasActiveDrops() &&
+      bugHuntPhase === 'none' &&
+      !isScooting() &&
+      Boolean(getCharSprite('idle_b'));
+    if (canIdleVariant) {
+      if (idleVariantActive && now >= idleVariantEndAt) {
+        idleVariantActive = false;
+        nextIdleVariantAt =
+          now + IDLE_VARIANT_GAP_MIN_MS + Math.random() * (IDLE_VARIANT_GAP_MAX_MS - IDLE_VARIANT_GAP_MIN_MS);
+      } else if (!idleVariantActive && !isBlinking && now >= nextIdleVariantAt) {
+        idleVariantActive = true;
+        idleVariantStartedAt = now;
+        idleVariantDir = Math.random() < 0.5 ? -1 : 1;
+        idleVariantEndAt =
+          now + IDLE_VARIANT_HOLD_MIN_MS + Math.random() * (IDLE_VARIANT_HOLD_MAX_MS - IDLE_VARIANT_HOLD_MIN_MS);
+      }
+    } else {
+      if (idleVariantActive) {
+        idleVariantActive = false;
+      }
+      if (nextIdleVariantAt < now + IDLE_VARIANT_GAP_MIN_MS) {
+        nextIdleVariantAt =
+          now + IDLE_VARIANT_GAP_MIN_MS + Math.random() * (IDLE_VARIANT_GAP_MAX_MS - IDLE_VARIANT_GAP_MIN_MS);
       }
     }
 
@@ -2343,6 +2581,8 @@ export async function mountPet(
       !isDragging &&
       !isDropping &&
       Boolean(getCharSprite('blink'));
+    const nearIdleVariantBoundary =
+      idleVariantActive && (now - idleVariantStartedAt < 200 || idleVariantEndAt - now < 220);
 
     const wasBlinking = isBlinking;
     if (canBlink) {
@@ -2357,12 +2597,16 @@ export async function mountPet(
         blinkEndAt = now + 130;
         pendingSecondBlinkAt = 0;
       } else if (!isBlinking && pendingSecondBlinkAt === 0 && now >= nextBlinkAt) {
-        isBlinking = true;
-        blinkEndAt = now + 130;
-        if (Math.random() < 0.2) {
-          pendingSecondBlinkAt = blinkEndAt + 140;
+        if (nearIdleVariantBoundary) {
+          nextBlinkAt = now + 240;
         } else {
-          nextBlinkAt = blinkEndAt + 2800 + Math.random() * 2200;
+          isBlinking = true;
+          blinkEndAt = now + 130;
+          if (Math.random() < 0.2) {
+            pendingSecondBlinkAt = blinkEndAt + 140;
+          } else {
+            nextBlinkAt = blinkEndAt + 2800 + Math.random() * 2200;
+          }
         }
       }
     } else {
@@ -2403,6 +2647,7 @@ export async function mountPet(
     // 帧率守门：活跃动画与过渡期间全速 60 FPS，仅真正静止/稳态睡眠回落节流
     const blinkEdgeChanged = isBlinking !== lastDrawnBlink;
     const gazeTrackingActive = Math.abs(targetIdleTilt) > 0.002 || hoverPointerLocal !== null;
+    const bonkFxActive = now < bonkHitstopUntil || bonkShakeAmp > 0.04 || bonkShockwave.active;
     const springsSettled =
       squashSpring.isSettled(0.006, 0.04) &&
       headShearSpring.isSettled(0.2, 1.0) &&
@@ -2412,6 +2657,8 @@ export async function mountPet(
       tiltSpring.isSettled(0.002, 0.02) &&
       !postureBridge.active &&
       !spriteBlender.active &&
+      !spriteSwapPending &&
+      !bonkFxActive &&
       turnHopRemaining <= 0 &&
       blinkNodAmt < 0.05 &&
       Math.abs(sway) < 0.2 &&
@@ -2443,8 +2690,10 @@ export async function mountPet(
       bowlFlyT >= 0 ||
       isScooting() ||
       bugHuntPhase !== 'none' ||
+      bonkFxActive ||
       pattingActive ||
       spriteBlender.active ||
+      spriteSwapPending ||
       !springsSettled ||
       activeInteractiveMood ||
       gazeTrackingActive ||
@@ -2469,14 +2718,17 @@ export async function mountPet(
     // dtWall：墙钟间隔（后台节流时 rAF 可能很稀疏），空投/碗塔按子步积分；弹簧按 1/60s 子步积分保证低帧率下仍丝滑不跳变
     const dtWall = Math.min(0.5, Math.max(0.001, (now - prevTs) / 1000));
     const dtReal = Math.min(0.05, dtWall);
-    const springSubSteps = dtReal > 0.02 ? Math.max(1, Math.ceil(dtReal / (1 / 60))) : 1;
-    const springDt = dtReal / springSubSteps;
+    const inHitstop = now < bonkHitstopUntil;
+    const dtPhys = inHitstop ? 0 : dtReal;
+    const dtWallPhys = inHitstop ? 0 : dtWall;
+    const springSubSteps = dtPhys > 0.02 ? Math.max(1, Math.ceil(dtPhys / (1 / 60))) : 1;
+    const springDt = dtPhys / springSubSteps;
     prevTs = now;
     lastDrawTs = now;
     lastDrawnBlink = isBlinking;
     if (boostUntil > 0 && now >= boostUntil) boostUntil = 0;
     const timeScale = boostUntil > now ? 1.38 : 1;
-    const dt = dtReal * timeScale;
+    const dt = dtPhys * timeScale;
     animElapsed += dt;
     const elapsed = animElapsed;
 
@@ -2485,13 +2737,35 @@ export async function mountPet(
       bubbleUntil = 0;
     }
     bubblePop += (1 - bubblePop) * Math.min(1, dtReal * 16);
-    blinkNodAmt *= Math.exp(-16 * dtReal);
-    turnHopRemaining = Math.max(0, turnHopRemaining - dtReal);
+    blinkNodAmt *= Math.exp(-16 * dtPhys);
+    turnHopRemaining = Math.max(0, turnHopRemaining - dtPhys);
+
+    // 命中阻尼微震 & 冲击波推进（在 Hitstop 冻结期间仍微震与爆发，拳拳到肉）
+    let bonkShakeX = 0;
+    let bonkShakeY = 0;
+    if (bonkShakeAmp > 0.04) {
+      bonkShakeElapsed += dtReal;
+      const decay = Math.exp(-bonkShakeElapsed * 11);
+      if (bonkShakeAmp * decay <= 0.04) {
+        bonkShakeAmp = 0;
+      } else {
+        bonkShakeX = bonkShakeAmp * decay * Math.sin(bonkShakeElapsed * 38);
+        bonkShakeY = bonkShakeAmp * 0.42 * decay * Math.cos(bonkShakeElapsed * 42);
+      }
+    }
+    if (bonkShockwave.active) {
+      bonkShockwave.elapsed += dtReal;
+      if (bonkShockwave.elapsed >= bonkShockwave.duration) {
+        bonkShockwave.active = false;
+      }
+    }
 
     // Horizontal sway + gaze tilt + pointer smoothing
-    swayVel += (-72 * sway - 7.2 * swayVel) * dtReal;
-    sway = Math.max(-14, Math.min(14, sway + swayVel * dtReal));
-    idleTilt += (effectiveTargetTilt - idleTilt) * Math.min(1, dtReal * 11);
+    if (!inHitstop) {
+      swayVel += (-72 * sway - 7.2 * swayVel) * dtPhys;
+      sway = Math.max(-14, Math.min(14, sway + swayVel * dtPhys));
+      idleTilt += (effectiveTargetTilt - idleTilt) * Math.min(1, dtPhys * 11);
+    }
     if (hoverPointerLocal) {
       if (smoothedHoverX === null || smoothedHoverY === null) {
         smoothedHoverX = hoverPointerLocal.x;
@@ -2565,18 +2839,28 @@ export async function mountPet(
     const compact = cw < 150;
     const footY = ch - (compact ? 5 : 9);
 
-    // 空投物品、碗塔碎片、二阶弹簧驱动的小碎步横移
-    {
-      const subSteps = Math.max(1, Math.ceil(dtWall / 0.025));
-      const subDt = dtWall / subSteps;
+    // 直接 setMood('bonk') 的命中瞬间也触发 Hitstop + 冲击波 + 微震
+    if (currentMood === 'bonk' && bugHuntPhase === 'none' && !bonkDirectSlammed) {
+      const directSlamAt = bonkStartedAt + BONK_WINDUP_MS + (getCharSprite('bonk_mid') ? BONK_MID_MS : 0);
+      if (now >= directSlamAt) {
+        bonkDirectSlammed = true;
+        triggerBonkImpact(now, cw, footY, false);
+      }
+    }
+
+    // 空投物品、碗塔碎片、二阶弹簧驱动的小碎步横移（Hitstop 冻结期间暂停）
+    if (dtWallPhys > 0) {
+      const subSteps = Math.max(1, Math.ceil(dtWallPhys / 0.025));
+      const subDt = dtWallPhys / subSteps;
       for (let i = 0; i < subSteps; i++) {
         updateDrops(subDt, now, cw, ch, footY);
         updateDebris(subDt, footY);
+        if (now < bonkHitstopUntil) break;
       }
     }
     if (isDragging) {
       scootSpring.snap(scootX);
-    } else {
+    } else if (!inHitstop) {
       for (let s = 0; s < springSubSteps; s++) {
         scootX = scootSpring.update(springDt, scootTarget);
       }
@@ -2595,7 +2879,7 @@ export async function mountPet(
 
     const walkingVisual = isWalkingVisual();
 
-    // BongoCat 节拍（按档位平顺拍打）
+    // BongoCat 节拍（按档位平顺拍打，4 帧 work_a..d 循环）
     if ((currentMood === 'work' || currentMood === 'overheat') && !walkingVisual) {
       const hz =
         fakeTypingUntil > 0
@@ -2609,9 +2893,10 @@ export async function mountPet(
       beatPhase += dt * hz;
       if (beatPhase >= 1) {
         beatPhase -= Math.floor(beatPhase);
-        workFrameA = !workFrameA;
+        workFrameIdx = (workFrameIdx + 1) % 4;
+        workFrameA = workFrameIdx % 2 === 0;
         workBeatAge = 0;
-        lastWorkFrame = workFrameA ? 0 : 1;
+        lastWorkFrame = workFrameIdx;
         if (now - lastBeatSfxAt >= 110) {
           lastBeatSfxAt = now;
           playSfx('typeKey');
@@ -2645,17 +2930,32 @@ export async function mountPet(
 
     const centerX = cw * 0.5 + scootX;
 
-    // PostureBridge 340ms 姿态族过渡（140ms 微蹲 -> 200ms 平滑抛物线小跳 -> 落地脉冲）
+    // 双档 PostureBridge：区分 energetic（接掉落/打虫/受惊）与 gentle（入睡/睡醒/听歌/摸鱼/吃完回待机）
     const effectivePosture: PostureFamily =
       isDragging || isDropping
         ? 'air'
         : walkingVisual
           ? 'stand'
           : moodToPosture(currentMood);
-    postureBridge.sync(effectivePosture, null);
-    const bridgeFrame = postureBridge.step(dtReal * 1000);
+    const postureStyle: PostureTransitionStyle =
+      bugHuntPhase !== 'none' ||
+      currentMood === 'bonk' ||
+      currentMood === 'scared' ||
+      currentMood === 'shock' ||
+      currentMood === 'caught' ||
+      currentMood === 'angry' ||
+      currentMood === 'poke' ||
+      currentMood === 'spin' ||
+      currentMood === 'cry' ||
+      hasCatchableFalling() ||
+      now - lastCatchAt < 260 ||
+      (postureBridge.currentPosture === 'air' && currentMood !== 'dizzy' && effectivePosture === 'stand')
+        ? 'energetic'
+        : 'gentle';
+    postureBridge.sync(effectivePosture, null, false, postureStyle);
+    const bridgeFrame = postureBridge.step(dtPhys * 1000);
     if (bridgeFrame.justLanded) {
-      squashSpring.impulse(1.5);
+      squashSpring.impulse(bridgeFrame.style === 'energetic' ? 1.5 : 0.28);
     }
 
     // 2.5D 转身方向（扒边探头：左边缘朝右进屏 +1，右边缘水平镜像朝左 -1）
@@ -2669,14 +2969,21 @@ export async function mountPet(
     }
     if (desiredFlipSign !== prevFlipSign) {
       prevFlipSign = desiredFlipSign;
-      turnHopRemaining = 0.24;
+      if (!suppressNextTurnHop && walkingVisual) {
+        turnHopRemaining = 0.24;
+      }
     }
-    for (let s = 0; s < springSubSteps; s++) {
-      facingSpring.update(springDt, desiredFlipSign);
+    if (suppressNextTurnHop && bugHuntPhase === 'none' && !isScooting()) {
+      suppressNextTurnHop = false;
+    }
+    if (!inHitstop) {
+      for (let s = 0; s < springSubSteps; s++) {
+        facingSpring.update(springDt, desiredFlipSign);
+      }
     }
     const turnHopY = turnHopRemaining > 0 ? -3.0 * Math.sin((turnHopRemaining / 0.24) * Math.PI) : 0;
 
-    // 步频时钟（真实位移速率驱动，斜行挪步直接使用 scootSpring 真实速度）
+    // 步频时钟（真实位移速率驱动 4 帧步态，斜行挪步直接使用 scootSpring 真实速度）
     let realWalkSpeedPx = 0;
     if (!walkingVisual) {
       strideClock.reset();
@@ -2689,6 +2996,7 @@ export async function mountPet(
     }
     const strideOut = strideClock.update(dt, realWalkSpeedPx, desiredFlipSign);
     currentStrideFrameA = strideOut.frameA;
+    currentStrideFrameIndex = strideOut.frameIndex;
     if (strideOut.justStepped && realWalkSpeedPx > 14 && !compact) {
       pushParticle(
         particles,
@@ -2703,16 +3011,26 @@ export async function mountPet(
       );
     }
 
-    const picked = chooseActiveSprite(elapsed, bridgeFrame.useCrouch, now);
+    const picked = chooseActiveSprite(elapsed, bridgeFrame.useCrouch, bridgeFrame.useSitTrans, now);
     const prevBlendKey = spriteBlender.key;
-    spriteBlender.sync(picked.img, picked.key, picked.kind);
+    const minSpriteHoldMs =
+      picked.kind === 'instant' ||
+      picked.kind === 'smear' ||
+      currentMood === 'dangle' ||
+      currentMood === 'scared' ||
+      isDragging ||
+      isDropping
+        ? 0
+        : SPRITE_MIN_HOLD_MS;
+    const spriteSwapped = spriteBlender.sync(picked.img, picked.key, picked.kind, minSpriteHoldMs);
     const blendStepMs =
-      prevBlendKey !== '' && prevBlendKey !== picked.key
+      prevBlendKey !== '' && spriteSwapped
         ? Math.min(dtReal * 1000, 1000 / 60)
         : dtReal * 1000;
     const blendFrame = spriteBlender.step(blendStepMs);
     const activeImg = blendFrame.toSprite ?? picked.img;
     const activeSpriteKey = blendFrame.key || picked.key;
+    spriteSwapPending = picked.img !== null && picked.key !== activeSpriteKey;
 
     // 统一比例锁：以基础立绘高度为基准，保持全员站/蹲/坐/趴头身比例恒定
     const maxPetW = cw * (compact ? 0.88 : 0.84);
@@ -2729,15 +3047,23 @@ export async function mountPet(
       ? getCharSprite('crouch')
         ? 0.04
         : 0.12
-      : 0;
+      : bridgeFrame.softSquash;
     const inBonkWindup =
       bugHuntPhase === 'windup' ||
       (bugHuntPhase === 'none' && now - bonkStartedAt < BONK_WINDUP_MS);
-    const bonkTarget = currentMood === 'bonk' ? (inBonkWindup ? -0.08 : 0.11) : 0;
+    const inBonkMid =
+      bugHuntPhase === 'midswing' ||
+      (bugHuntPhase === 'none' &&
+        Boolean(getCharSprite('bonk_mid')) &&
+        now - bonkStartedAt >= BONK_WINDUP_MS &&
+        now - bonkStartedAt < BONK_WINDUP_MS + BONK_MID_MS);
+    const bonkTarget = currentMood === 'bonk' ? (inBonkWindup ? -0.08 : inBonkMid ? 0.02 : 0.11) : 0;
     const wakeTarget = currentMood === 'drowsy' && drowsyWakeStretch ? -0.07 : 0;
     const targetSquash = crouchTarget + bonkTarget + wakeTarget;
-    for (let s = 0; s < springSubSteps; s++) {
-      squashSpring.update(springDt, targetSquash);
+    if (!inHitstop) {
+      for (let s = 0; s < springSubSteps; s++) {
+        squashSpring.update(springDt, targetSquash);
+      }
     }
     const effectiveSquash = Math.max(-0.22, Math.min(0.32, squashSpring.y));
 
@@ -2753,13 +3079,21 @@ export async function mountPet(
     const walkLagTarget =
       walkingVisual && !(peeking && locoDir !== 0) ? -desiredFlipSign * Math.min(6, realWalkSpeedPx * 0.08) : 0;
     const isMusicMode = currentMood === 'music' || (currentMood === 'slack' && slackVariant === 'music');
-    const musicBeatSin = isMusicMode ? Math.sin(elapsed * MUSIC_BEAT_HZ * Math.PI) : 0;
+    const musicTime = isMusicMode ? Math.max(0, elapsed - musicPhaseStart) : 0;
+    // 与 4 帧听歌序列（a 左歪 -> b 正点头 -> c 右歪 -> d 正摇摆）相位精准同频
+    const musicBeatSin = isMusicMode
+      ? -Math.cos((musicTime * MUSIC_BEAT_HZ - 0.5) * Math.PI * 0.5)
+      : 0;
+    const idleMicroShear = idleVariantActive && currentMood === 'idle' ? idleVariantDir * 1.4 : 0;
+    const idleMicroTail = idleVariantActive && currentMood === 'idle' ? -idleVariantDir * 1.8 : 0;
 
-    const headTarget = gazeShearTarget + walkLagTarget + patNuzzleX + musicBeatSin * 2.8;
-    const tailTarget = -walkLagTarget * 0.9 - musicBeatSin * 3.4;
-    for (let s = 0; s < springSubSteps; s++) {
-      headShearSpring.update(springDt, headTarget);
-      tailSwaySpring.update(springDt, tailTarget);
+    const headTarget = gazeShearTarget + walkLagTarget + patNuzzleX + musicBeatSin * 2.8 + idleMicroShear;
+    const tailTarget = -walkLagTarget * 0.9 - musicBeatSin * 3.4 + idleMicroTail;
+    if (!inHitstop) {
+      for (let s = 0; s < springSubSteps; s++) {
+        headShearSpring.update(springDt, headTarget);
+        tailSwaySpring.update(springDt, tailTarget);
+      }
     }
 
     const breathSpeed =
@@ -2786,7 +3120,7 @@ export async function mountPet(
     else if (currentMood === 'eat') hopY = -0.5 * (1 - Math.cos(elapsed * 7.6)) * 3.2;
     else if (currentMood === 'happy' || currentMood === 'coffee')
       hopY = -0.5 * (1 - Math.cos(elapsed * 5.4)) * 3.6;
-    else if (isMusicMode) hopY = -0.5 * (1 - Math.cos(elapsed * MUSIC_BEAT_HZ * Math.PI * 2)) * 2.2;
+    else if (isMusicMode) hopY = -0.5 * (1 - Math.cos(musicTime * MUSIC_BEAT_HZ * Math.PI * 2)) * 2.2;
     else if (currentMood === 'spin') hopY = -0.5 * (1 - Math.cos(elapsed * 9.5)) * 2.4;
     else if (currentMood === 'shock' || currentMood === 'caught')
       hopY = -0.5 * (1 - Math.cos(elapsed * 8.5)) * (currentMood === 'caught' ? 2.6 : 4.2);
@@ -2797,7 +3131,7 @@ export async function mountPet(
       if (dAge >= 2800 && dAge < 3350) hopY = -3.2 * Math.sin(((dAge - 2800) / 550) * Math.PI);
     }
 
-    const totalHopY = hopY + bridgeFrame.hopOffsetY + turnHopY;
+    const totalHopY = hopY + bridgeFrame.hopOffsetY + turnHopY + bonkShakeY;
     const visualFootY = footY + totalHopY + dropOffsetY;
     const topY = visualFootY - totalH;
 
@@ -2813,13 +3147,19 @@ export async function mountPet(
     ctx.fill();
     ctx.restore();
 
+    const baseWorking = currentMood === 'work' && moodRevertAt === 0;
+    const isFieryOverheat = currentMood === 'overheat' || (baseWorking && rateTier >= 3 && !walkingVisual);
+    if (isFieryOverheat && !compact) {
+      drawOverheatGlow(ctx, centerX, topY + totalH * 0.56, baseW * 0.44, totalH * 0.42, elapsed);
+    }
+
     // 2. Render pet sprite with equal-power SpriteBlender crossfade & seamless slices
     const useSlices =
       effectivePosture !== 'lie' && effectivePosture !== 'air' && !isDragging && !isDropping;
     const tintRgb =
       currentMood === 'angry'
         ? '244, 63, 94'
-        : currentMood === 'overheat' && !getCharSprite('overheat')
+        : isFieryOverheat && !getCharSprite('overheat')
           ? '239, 68, 68'
           : null;
     const useOffscreen = tintRgb !== null && spriteCtx !== null;
@@ -2834,7 +3174,7 @@ export async function mountPet(
     }
 
     const idleSway = Math.sin(elapsed * 1.35) * (compact ? 1.5 : 2.3);
-    let spriteShiftX = 0;
+    let spriteShiftX = bonkShakeX;
 
     // 2.5D 平滑水平翻转尺度（仅走路/探头/重锤或过渡期间离开 +1）
     const flipScaleRaw = facingSpring.y;
@@ -2847,7 +3187,7 @@ export async function mountPet(
     const dangleSpriteRef = getCharSprite('dangle');
 
     let targetTilt = 0;
-    let shiftX = 0;
+    let shiftX = bonkShakeX;
     if (useSlices) {
       targetTilt = idleTilt + patNuzzleTilt;
       if (walkingVisual) {
@@ -2857,7 +3197,7 @@ export async function mountPet(
       } else if (currentMood === 'poke') {
         targetTilt += sway * 0.008;
       } else if (isMusicMode) {
-        targetTilt += musicBeatSin * 0.05;
+        targetTilt += musicBeatSin * 0.048;
       } else if (currentMood === 'drowsy' && !drowsyWakeStretch) {
         const dAge = Math.max(0, now - drowsyEnteredAt);
         if (!getCharSprite('drowsy') && dAge >= 2800 && dAge < 3350) {
@@ -2867,38 +3207,43 @@ export async function mountPet(
         }
       } else if (currentMood === 'dizzy') {
         targetTilt += Math.sin(elapsed * 3.8) * 0.07;
-        shiftX = Math.sin(elapsed * 3.2) * 2.0;
+        shiftX += Math.sin(elapsed * 3.2) * 2.0;
       } else if (currentMood === 'bonk') {
-        targetTilt += inBonkWindup ? -bugHuntDir * 0.08 : bugHuntDir * 0.1;
+        targetTilt += inBonkWindup ? -bugHuntDir * 0.08 : inBonkMid ? bugHuntDir * 0.02 : bugHuntDir * 0.1;
       } else if (currentMood === 'work' || currentMood === 'overheat') {
         const isFallback = !getCharSprite('work_a') && !getCharSprite('work_b');
         if (isFallback) targetTilt += workFrameA ? -0.045 : 0.045;
-        if (currentMood === 'overheat' || (rateTier >= 3 && moodRevertAt === 0)) {
-          shiftX = Math.sin(elapsed * 18) * 1.0;
+        if (isFieryOverheat) {
+          shiftX += Math.sin(elapsed * 18) * 1.0;
         }
       } else if (currentMood === 'spin') {
         targetTilt += Math.sin(elapsed * 8.5) * 0.09;
-        shiftX = Math.sin(elapsed * 11) * 1.6;
+        shiftX += Math.sin(elapsed * 11) * 1.6;
       } else if (currentMood === 'shock' || currentMood === 'caught') {
-        shiftX = Math.sin(elapsed * 17) * 1.4;
+        shiftX += Math.sin(elapsed * 17) * 1.4;
       } else if (currentMood === 'scared') {
-        shiftX = Math.sin(elapsed * 19) * 1.6;
+        shiftX += Math.sin(elapsed * 19) * 1.6;
       } else if (currentMood === 'cry') {
-        shiftX = Math.sin(elapsed * 13) * 1.0;
+        shiftX += Math.sin(elapsed * 13) * 1.0;
       } else if (currentMood === 'slack') {
         targetTilt += Math.sin(elapsed * 1.3) * 0.022;
+      } else if (currentMood === 'idle' && idleVariantActive) {
+        targetTilt += idleVariantDir * 0.028;
       }
       spriteShiftX = shiftX;
     }
     let totalTilt = tiltSpring.y;
     const tiltTarget = useSlices ? targetTilt : 0;
-    for (let s = 0; s < springSubSteps; s++) {
-      totalTilt = tiltSpring.update(springDt, tiltTarget);
+    if (!inHitstop) {
+      for (let s = 0; s < springSubSteps; s++) {
+        totalTilt = tiltSpring.update(springDt, tiltTarget);
+      }
     }
 
     const renderSingleSprite = (
       targetCtx: CanvasRenderingContext2D,
       img: HTMLImageElement,
+      spriteKey: string,
       alpha: number,
       passFlipSign: 1 | -1 = flipSign,
       parentBlended = false,
@@ -2911,6 +3256,7 @@ export async function mountPet(
       const iBaseH = iImgH * iFit;
       const iTotalH = iBaseH * scaleY;
       const iTopY = visualFootY - iTotalH;
+      const anchorX = getSpriteAnchorX(spriteKey);
       const isWholePoseSprite =
         !useSlices || img === sleepSpriteRef || img === tiredSpriteRef || img === dangleSpriteRef;
 
@@ -2946,7 +3292,8 @@ export async function mountPet(
             baseIdleOffset +
             ambientHem +
             moodJitter;
-          const dx = centerX + shiftX - dw * 0.5 + worldOffset * passFlipSign;
+          // 锚点位于 centerX + shiftX，drawFlippedPass 绕 centerX + shiftX 做水平缩放时身体重心自动精确锁死零跳变
+          const dx = centerX + shiftX - dw * anchorX + worldOffset * passFlipSign;
 
           if (isBlended) {
             const sy0 = Math.round(t0 * iImgH);
@@ -2979,7 +3326,7 @@ export async function mountPet(
           if (currentMood === 'tired' && !getCharSprite('tired')) scaleXMod += 0.05;
         }
         const dw = iBaseW * Math.max(0.74, Math.min(1.36, scaleXMod));
-        const dx = centerX + shiftX - dw * 0.5;
+        const dx = centerX + shiftX - dw * anchorX;
         targetCtx.drawImage(img, dx, iTopY, dw, iTotalH);
       }
 
@@ -3011,11 +3358,21 @@ export async function mountPet(
           }
 
           // 红温残影拖尾（最多 2 层）
-          if (currentMood === 'work' && rateTier >= 3 && moodRevertAt === 0) {
-            const ghost = getCharSprite(workFrameA ? 'work_b' : 'work_a') ?? toSprite;
+          if (isFieryOverheat) {
+            const ghostSuffix: ActionSpriteSuffix =
+              getCharSprite('overheat') && getCharSprite('overheat_b')
+                ? workFrameIdx % 2 === 0
+                  ? 'overheat_b'
+                  : 'overheat'
+                : workFrameA
+                  ? 'work_b'
+                  : 'work_a';
+            const ghostImg = getCharSprite(ghostSuffix);
+            const ghost = ghostImg ?? toSprite;
+            const ghostAnchorX = getSpriteAnchorX(ghostImg ? `${currentChar}_${ghostSuffix}` : activeSpriteKey);
             const prevAlpha = drawTarget.globalAlpha;
             const gdw = baseW * vpScaleX;
-            const gdx = centerX + shiftX - gdw * 0.5;
+            const gdx = centerX + shiftX - gdw * ghostAnchorX;
             drawTarget.globalAlpha = prevAlpha * 0.24;
             drawTarget.drawImage(ghost, gdx - 3.5, topY + 1, gdw, totalH);
             drawTarget.globalAlpha = prevAlpha * 0.11;
@@ -3024,9 +3381,16 @@ export async function mountPet(
           }
 
           if (blendFrame.active && blendFrame.fromSprite && blendFrame.alphaFrom > 0.005) {
-            renderSingleSprite(drawTarget, blendFrame.fromSprite, blendFrame.alphaFrom, passSign, passBlended);
+            renderSingleSprite(
+              drawTarget,
+              blendFrame.fromSprite,
+              blendFrame.fromKey || activeSpriteKey,
+              blendFrame.alphaFrom,
+              passSign,
+              passBlended,
+            );
           }
-          renderSingleSprite(drawTarget, toSprite, blendFrame.alphaTo, passSign, passBlended);
+          renderSingleSprite(drawTarget, toSprite, activeSpriteKey, blendFrame.alphaTo, passSign, passBlended);
           drawTarget.restore();
         };
 
@@ -3051,15 +3415,20 @@ export async function mountPet(
       drawTarget.restore();
     } else if (blendFrame.toSprite) {
       if (blendFrame.active && blendFrame.fromSprite && blendFrame.alphaFrom > 0.005) {
-        renderSingleSprite(drawTarget, blendFrame.fromSprite, blendFrame.alphaFrom);
+        renderSingleSprite(
+          drawTarget,
+          blendFrame.fromSprite,
+          blendFrame.fromKey || activeSpriteKey,
+          blendFrame.alphaFrom,
+        );
       }
-      renderSingleSprite(drawTarget, blendFrame.toSprite, blendFrame.alphaTo);
+      renderSingleSprite(drawTarget, blendFrame.toSprite, activeSpriteKey, blendFrame.alphaTo);
     } else {
       drawFallbackChibi(drawTarget, centerX, visualFootY, totalH, currentChar, currentMood);
     }
 
     if (useOffscreen && spriteCtx && tintRgb) {
-      const tintAlpha = (currentMood === 'overheat' ? 0.26 : 0.15) + 0.07 * Math.sin(elapsed * 10);
+      const tintAlpha = (isFieryOverheat ? 0.26 : 0.15) + 0.07 * Math.sin(elapsed * 10);
       spriteCtx.save();
       spriteCtx.globalCompositeOperation = 'source-atop';
       spriteCtx.fillStyle = `rgba(${tintRgb}, ${tintAlpha.toFixed(3)})`;
@@ -3079,11 +3448,11 @@ export async function mountPet(
     lastLayout.baseW = baseW;
     lastLayout.footY = footY;
 
-    // 2b. 键盘彩虹光（全力及以上）+ 头顶蒸汽（红温）+ 眩晕星环 + 程序化重锤兜底 + 摸头小手
-    const baseWorking = currentMood === 'work' && moodRevertAt === 0;
-    const overheatFallback = currentMood === 'overheat' && !getCharSprite('overheat');
-    if ((baseWorking && rateTier >= 2 && !walkingVisual) || overheatFallback) {
-      const usingWorkSprite = Boolean(getCharSprite('work_a') || getCharSprite('work_b'));
+    // 2b. 键盘彩虹光（全力及以上 + 红温）+ 头顶蒸汽（红温 & 持续 T3）+ 眩晕星环 + 重锤冲击波 + 程序化重锤兜底 + 摸头小手
+    if ((baseWorking && rateTier >= 2 && !walkingVisual) || currentMood === 'overheat') {
+      const usingWorkSprite = Boolean(
+        getCharSprite('work_a') || getCharSprite('work_b') || getCharSprite('overheat'),
+      );
       const kbY = usingWorkSprite ? topY + totalH * 0.885 : footY - 6;
       drawKeyboardRainbow(
         ctx,
@@ -3092,11 +3461,17 @@ export async function mountPet(
         baseW * 0.5,
         Math.max(4, totalH * 0.05),
         elapsed,
-        rateTier >= 3 || overheatFallback ? 1.25 : 0.9,
+        isFieryOverheat ? 1.25 : 0.9,
       );
     }
-    if ((baseWorking && rateTier >= 3 && !walkingVisual) || overheatFallback) {
-      drawHeadSteam(ctx, centerX + baseW * 0.14, topY + totalH * 0.08, elapsed, compact ? 6 : 10);
+    if (isFieryOverheat) {
+      drawHeadSteam(
+        ctx,
+        centerX + spriteShiftX + baseW * 0.14,
+        Math.max(14, topY + totalH * 0.06),
+        elapsed,
+        compact ? 6 : 10,
+      );
     }
     if (currentMood === 'cry' && !compact && !getCharSprite('cry')) {
       drawWaterfallTears(ctx, centerX + spriteShiftX, topY + totalH * 0.42, baseW * 0.1, elapsed);
@@ -3105,14 +3480,23 @@ export async function mountPet(
       drawDizzyOrbit(
         ctx,
         centerX + spriteShiftX,
-        Math.max(18, topY + totalH * 0.04),
-        Math.max(20, baseW * 0.34),
+        Math.max(16, topY + totalH * 0.02),
+        Math.max(22, baseW * 0.32),
         elapsed,
       );
     }
+    if (bonkShockwave.active && !compact) {
+      drawBonkShockwave(
+        ctx,
+        bonkShockwave.x,
+        bonkShockwave.y,
+        bonkShockwave.elapsed / bonkShockwave.duration,
+        Math.max(32, baseW * 0.34),
+        bonkShockwave.dir,
+      );
+    }
     if (currentMood === 'bonk' && !compact && !getCharSprite('bonk_a') && !getCharSprite('bonk_b')) {
-      const inWindup = bugHuntPhase === 'windup' || (bugHuntPhase === 'none' && now - bonkStartedAt < BONK_WINDUP_MS);
-      const hRot = inWindup ? -bugHuntDir * 0.45 : bugHuntDir * 1.22;
+      const hRot = inBonkWindup ? -bugHuntDir * 0.45 : inBonkMid ? bugHuntDir * 0.35 : bugHuntDir * 1.22;
       drawToyHammer(
         ctx,
         centerX + bugHuntDir * baseW * 0.26,
@@ -3354,10 +3738,26 @@ export async function mountPet(
     bugHuntPhase = 'none';
     bugHuntSlot = null;
     bugHuntUntil = 0;
+    lastCatchAt = Number.NEGATIVE_INFINITY;
+    suppressNextTurnHop = false;
+    bonkHitstopUntil = 0;
+    bonkShakeAmp = 0;
+    bonkShakeElapsed = 0;
+    bonkDirectSlammed = false;
+    bonkShockwave.active = false;
+    bonkShockwave.elapsed = 0;
+    idleVariantActive = false;
+    idleVariantStartedAt = 0;
+    idleVariantEndAt = 0;
+    idleVariantDir = 1;
+    nextIdleVariantAt =
+      manualClockNow + IDLE_VARIANT_GAP_MIN_MS + Math.random() * (IDLE_VARIANT_GAP_MAX_MS - IDLE_VARIANT_GAP_MIN_MS);
     locoDir = 0;
     peeking = false;
     locoSpeedRatio = 1;
     facing = 1;
+    currentStrideFrameA = true;
+    currentStrideFrameIndex = 0;
     boostUntil = 0;
     fakeTypingUntil = 0;
     scootTarget = 0;
@@ -3406,6 +3806,8 @@ export async function mountPet(
     eatPhaseStart = 0;
     musicPhaseStart = 0;
     beatPhase = 0;
+    workFrameIdx = 0;
+    workFrameA = true;
     lastWorkFrame = -1;
     workBeatAge = 1;
     emitTimer = 0;
@@ -3421,6 +3823,7 @@ export async function mountPet(
     prevTs = manualClockNow;
     lastDrawTs = Number.NEGATIVE_INFINITY;
     postureBridge.reset('stand');
+    spriteSwapPending = false;
     spriteBlender.reset();
     strideClock.reset();
     shakeDetector.reset();

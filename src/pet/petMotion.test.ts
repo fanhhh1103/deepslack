@@ -4,6 +4,9 @@ import {
   organicBreath,
   POSTURE_BRIDGE_MS,
   POSTURE_CROUCH_MS,
+  POSTURE_GENTLE_BRIDGE_MS,
+  POSTURE_GENTLE_SETTLE_MS,
+  POSTURE_GENTLE_TRANS_MS,
   POSTURE_HOP_MS,
   PostureBridge,
   SecondOrderSpring,
@@ -140,24 +143,65 @@ describe('PostureBridge & moodToPosture', () => {
     expect(fEnd.ghostAlpha).toBe(0);
     expect(fEnd.justLanded).toBe(true);
   });
+
+  it('supports gentle posture bridge using sit_trans & softSquash without ever flashing crouch or hop', () => {
+    expect(POSTURE_GENTLE_TRANS_MS).toBe(135);
+    expect(POSTURE_GENTLE_SETTLE_MS).toBe(145);
+    expect(POSTURE_GENTLE_BRIDGE_MS).toBe(280);
+
+    const bridge = new PostureBridge<string>(4.2);
+    expect(bridge.sync('lie', null, false, 'gentle')).toBe(true);
+    expect(bridge.active).toBe(true);
+    expect(bridge.style).toBe('gentle');
+
+    // 前 135ms：使用优雅 sit_trans，绝不闪现 crouch，也无跳跃
+    const fTrans = bridge.step(70);
+    expect(fTrans.active).toBe(true);
+    expect(fTrans.style).toBe('gentle');
+    expect(fTrans.useCrouch).toBe(false);
+    expect(fTrans.useSitTrans).toBe(true);
+    expect(fTrans.hopOffsetY).toBe(0);
+    expect(fTrans.softSquash).toBeGreaterThan(0.02);
+    expect(fTrans.justLanded).toBe(false);
+
+    // 135-280ms：退出 sit_trans，进入柔缓挤压回弹
+    const fSettle = bridge.step(100); // elapsed = 170ms
+    expect(fSettle.active).toBe(true);
+    expect(fSettle.useCrouch).toBe(false);
+    expect(fSettle.useSitTrans).toBe(false);
+    expect(fSettle.hopOffsetY).toBe(0);
+    expect(fSettle.softSquash).toBeGreaterThan(0);
+
+    // 满 280ms 结束，触发柔缓落地信号
+    const fDone = bridge.step(115);
+    expect(fDone.active).toBe(false);
+    expect(fDone.style).toBe('gentle');
+    expect(fDone.useCrouch).toBe(false);
+    expect(fDone.useSitTrans).toBe(false);
+    expect(fDone.softSquash).toBe(0);
+    expect(fDone.justLanded).toBe(true);
+  });
 });
 
 describe('SpriteBlender', () => {
-  it('snaps on first non-null sprite, cross-fades with equal-power opacity >= 0.914, and settles cleanly', () => {
+  it('snaps on first non-null sprite, cross-fades with equal-power opacity >= 0.914, tracks fromKey, and supports smear blend', () => {
     const blender = new SpriteBlender<string>();
     blender.sync('img_idle', 'dafeiyu', 'pose');
     const initial = blender.step(16);
     expect(initial.active).toBe(false);
     expect(initial.toSprite).toBe('img_idle');
+    expect(initial.fromKey).toBe('');
     expect(initial.alphaTo).toBe(1);
 
-    // 切到 sleep 姿态，触发 140ms pose 混合
+    // 切到 sleep 姿态，触发 150ms pose 混合
     blender.sync('img_sleep', 'dafeiyu_sleep', 'pose');
     expect(blender.active).toBe(true);
     const f1 = blender.step(16.67);
     expect(f1.active).toBe(true);
     expect(f1.fromSprite).toBe('img_idle');
     expect(f1.toSprite).toBe('img_sleep');
+    expect(f1.fromKey).toBe('dafeiyu');
+    expect(f1.key).toBe('dafeiyu_sleep');
     expect(f1.alphaFrom).toBeGreaterThan(0.85);
     expect(f1.alphaTo).toBeLessThan(0.45);
     const compositeOpacity = 1 - (1 - f1.alphaFrom) * (1 - f1.alphaTo);
@@ -169,16 +213,45 @@ describe('SpriteBlender', () => {
     expect(fHalf.alphaFrom ** 2 + fHalf.alphaTo ** 2).toBeCloseTo(1, 5);
     expect(1 - (1 - fHalf.alphaFrom) * (1 - fHalf.alphaTo)).toBeGreaterThanOrEqual(0.914);
 
-    // beat 过渡时长（160ms）
+    // 结束后 fromKey 清空
     const fEnd = blender.step(SPRITE_BLEND_MS.pose);
     expect(fEnd.active).toBe(false);
+    expect(fEnd.fromKey).toBe('');
     expect(fEnd.alphaFrom).toBe(0);
     expect(fEnd.alphaTo).toBe(1);
 
+    // beat 过渡时长（150ms）
     blender.sync('img_music_a', 'dafeiyu_music_a', 'beat');
     const beatHalf = blender.step(SPRITE_BLEND_MS.beat * 0.5);
     expect(beatHalf.active).toBe(true);
     expect(beatHalf.progress).toBeCloseTo(0.5, 4);
+
+    // smear 快速挥锤混合（50ms）在 60FPS 首帧仍满足等功率平滑门禁
+    blender.sync('img_bonk_mid', 'dafeiyu_bonk_mid', 'smear');
+    const smearFirst = blender.step(1000 / 60);
+    expect(smearFirst.active).toBe(true);
+    expect(smearFirst.fromKey).toBe('dafeiyu_music_a');
+    expect(smearFirst.alphaFrom).toBeGreaterThan(0.85);
+    expect(smearFirst.alphaTo).toBeLessThan(0.45);
+    expect(1 - (1 - smearFirst.alphaFrom) * (1 - smearFirst.alphaTo)).toBeGreaterThanOrEqual(0.914);
+
+    // minHoldMs 防抖：步态刚切入 walk_d 后 33.3ms 内到来的非紧急 peek 切帧应延后至 >= 48ms
+    blender.reset();
+    blender.sync('img_walk_c', 'dafeiyu_walk_c', 'step');
+    blender.step(100);
+    expect(blender.sync('img_walk_d', 'dafeiyu_walk_d', 'step', 48)).toBe(true);
+    blender.step(1000 / 60); // 16.7ms
+    blender.step(1000 / 60); // 33.3ms
+    expect(blender.sync('img_peek', 'dafeiyu_peek', 'pose', 48)).toBe(false);
+    expect(blender.key).toBe('dafeiyu_walk_d');
+    blender.step(1000 / 60); // 50.0ms >= 48ms
+    expect(blender.sync('img_peek', 'dafeiyu_peek', 'pose', 48)).toBe(true);
+    expect(blender.key).toBe('dafeiyu_peek');
+    const peekFirst = blender.step(1000 / 60);
+    expect(peekFirst.active).toBe(true);
+    expect(peekFirst.fromKey).toBe('dafeiyu_walk_d');
+    expect(peekFirst.alphaFrom).toBeGreaterThan(0.85);
+    expect(peekFirst.alphaTo).toBeLessThan(0.45);
 
     blender.reset();
     expect(blender.key).toBe('');
@@ -186,30 +259,46 @@ describe('SpriteBlender', () => {
 });
 
 describe('StrideClock', () => {
-  it('advances step phase proportionally to real speed, uses smooth cosine hop, caps cadence <= 3.8 steps/s', () => {
+  it('advances 4-frame stride cycle proportionally to real speed, uses smooth cosine hop, caps cadence <= 3.8 steps/s', () => {
     const clock = new StrideClock(10, 3);
     const rest = clock.update(0.05, 0);
     expect(rest.hopY).toBe(0);
+    expect(rest.frameIndex).toBe(0);
     expect(rest.footPlanted).toBe(true);
     expect(rest.justStepped).toBe(false);
 
-    // 10px/step 下 35px/s = 3.5 steps/s（低于 3.8 封顶）：走 0.14286s ≈ 0.5 * PI（半步余弦顶点）
+    // 10px/step 下 35px/s = 3.5 steps/s（低于 3.8 封顶）：走 0.14286s ≈ 0.5 * PI（半步余弦顶点 -> passing frameIndex=1）
     const halfStepDt = 5 / 35;
-    const mid = clock.update(halfStepDt, 35, 1);
+    const quarter = clock.update(halfStepDt * 0.5, 35, 1);
+    expect(quarter.frameIndex).toBe(0);
+    expect(quarter.frameA).toBe(true);
+
+    const mid = clock.update(halfStepDt * 0.5, 35, 1);
     expect(mid.frameA).toBe(true);
+    expect(mid.frameIndex).toBe(1);
     expect(mid.hopY).toBeCloseTo(-3, 4);
     expect(mid.leanRad).toBeGreaterThan(0);
     expect(mid.justStepped).toBe(false);
 
-    // 再走半步 → 累计 PI，完成一脚落地并切到 frameB
+    // 再走半步 → 累计 PI，完成一脚落地并切到 contact 2 (frameIndex=2, frameA=false)
     const step1 = clock.update(halfStepDt, 35, 1);
     expect(step1.justStepped).toBe(true);
     expect(step1.frameA).toBe(false);
+    expect(step1.frameIndex).toBe(2);
     expect(step1.footPlanted).toBe(true);
 
     // 落地瞬时前一帧与后一帧跳高导数平滑接近 0（cos(2*theta) 拱形）
     const afterLand = clock.update(0.005, 35, 1);
     expect(Math.abs(afterLand.hopY - step1.hopY)).toBeLessThan(0.05);
+
+    // 继续推进到 1.5*PI (passing 2 -> frameIndex=3) 与 2*PI (回到 contact 1 -> frameIndex=0)
+    const pass2 = clock.update(halfStepDt - 0.005, 35, 1);
+    expect(pass2.frameIndex).toBe(3);
+    expect(pass2.frameA).toBe(false);
+    const wrap0 = clock.update(halfStepDt + 0.002, 35, 1);
+    expect(wrap0.frameIndex).toBe(0);
+    expect(wrap0.frameA).toBe(true);
+    expect(wrap0.justStepped).toBe(true);
 
     // 向左走 leanRad 倾角为负（先推进到正交相位测纯移动倾向）
     const leftClock = new StrideClock(22, 2.4);
@@ -220,10 +309,14 @@ describe('StrideClock', () => {
     // 高速狂飙（400 px/s）步频硬封顶在 <= 3.8 steps/s
     const fastClock = new StrideClock(22, 2.4);
     let steps = 0;
+    const seenFrames = new Set<number>();
     for (let i = 0; i < 60; i++) {
-      if (fastClock.update(1 / 60, 400, 1).justStepped) steps++;
+      const out = fastClock.update(1 / 60, 400, 1);
+      seenFrames.add(out.frameIndex);
+      if (out.justStepped) steps++;
     }
     expect(steps).toBeLessThanOrEqual(4); // 3.8 steps/s in 1s -> max 3 or 4 boundaries
+    expect(seenFrames).toEqual(new Set([0, 1, 2, 3]));
   });
 });
 

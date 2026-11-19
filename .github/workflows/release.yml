@@ -1,0 +1,88 @@
+name: Release Desktop Installers (macOS & Windows)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-tauri:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ''
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Typecheck & run frontend tests
+        run: npm run typecheck && npm test
+
+      - name: Run Rust tests
+        if: matrix.target != 'x86_64-apple-darwin'
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: Install Tauri v2 CLI
+        run: npm install -g @tauri-apps/cli@2
+
+      - name: Build and upload Tauri release bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'DeepSlack v__VERSION__ · 深度摸鱼（烧币版）'
+          releaseBody: |
+            ## 🐳 DeepSlack v__VERSION__ · 深度摸鱼（烧币版）
+
+            **Privacy-first anime desktop pet powered by your daily Claude Code / Codex / Antigravity token burn.**
+
+            ### 📦 Downloads / 安装包选择
+            - **macOS (Apple Silicon M1/M2/M3/M4)**: `*aarch64.dmg`
+            - **macOS (Intel)**: `*x64.dmg`
+            - **Windows 10/11 (x64)**: `*x64-setup.exe` (推荐，用户级免管理员安装) or `*x64_en-US.msi`
+            - **🌐 3-Second Web Demo / 网页免安装试玩**: https://fanhhh1103.github.io/deepslack/
+
+            ### 💡 First Launch Notice (Unsigned Builds / 首次打开提示)
+            - **macOS**: If macOS says the app is damaged or from an unidentified developer, drag `DeepSlack.app` to Applications and run:
+              ```bash
+              xattr -cr /Applications/DeepSlack.app
+              ```
+            - **Windows**: Click **"More info" → "Run anyway"** if Windows SmartScreen prompts on first launch.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}

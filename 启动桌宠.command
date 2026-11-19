@@ -10,6 +10,7 @@ echo "🐳 正在唤醒 AI娘算力桌宠..."
 # 优先查找已打包的 macOS 原生 .app
 APP_BUNDLE=""
 for candidate in \
+  "$SCRIPT_DIR/DeepSlack.app" \
   "$SCRIPT_DIR/AI娘算力桌宠.app" \
   "$SCRIPT_DIR/src-tauri/target/release/bundle/macos"/*.app \
   "$SCRIPT_DIR/src-tauri/target/universal-apple-darwin/release/bundle/macos"/*.app \

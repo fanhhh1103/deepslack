@@ -459,3 +459,118 @@ export function drawToyHammer(
 
   ctx.restore();
 }
+
+/** 重锤命中瞬间的径向冲击波环 + 漫画星芒 + 飞散速度线 */
+export function drawBonkShockwave(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  progress: number,
+  maxRadius = 42,
+  dir: 1 | -1 = 1,
+): void {
+  const u = Math.max(0, Math.min(1, progress));
+  if (u <= 0 || u >= 1) return;
+
+  const easeOut = 1 - (1 - u) * (1 - u) * (1 - u);
+  const fade = Math.max(0, 1 - u);
+
+  ctx.save();
+  ctx.translate(x, y);
+
+  // 1. 扩散冲击圆环（金黄外圈 + 天蓝亮内圈）
+  const ringR = maxRadius * (0.24 + 0.76 * easeOut);
+  ctx.globalAlpha = fade * 0.92;
+  ctx.beginPath();
+  ctx.arc(0, 0, ringR, 0, Math.PI * 2);
+  ctx.lineWidth = Math.max(1.2, (1 - u) * 4.2);
+  ctx.strokeStyle = '#facc15';
+  ctx.stroke();
+
+  ctx.globalAlpha = fade * 0.75;
+  ctx.beginPath();
+  ctx.arc(0, 0, ringR * 0.72, 0, Math.PI * 2);
+  ctx.lineWidth = Math.max(0.8, (1 - u) * 2.4);
+  ctx.strokeStyle = '#38bdf8';
+  ctx.stroke();
+
+  // 2. 瞬间爆裂八芒漫画冲击星（前 65% 生命期）
+  if (u < 0.65) {
+    const starU = u / 0.65;
+    const starScale = starU < 0.25 ? 0.55 + (starU / 0.25) * 0.6 : 1.15 - ((starU - 0.25) / 0.75) * 0.65;
+    const starAlpha = Math.max(0, 1 - starU * starU);
+    const outerR = maxRadius * 0.48 * starScale;
+    const innerR = outerR * 0.42;
+
+    ctx.save();
+    ctx.globalAlpha = starAlpha * 0.94;
+    ctx.rotate(dir * 0.18 + u * 0.35);
+    ctx.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const ang = (i * Math.PI) / 8;
+      const rad = i % 2 === 0 ? outerR * (i % 4 === 0 ? 1.12 : 0.86) : innerR;
+      const px = Math.cos(ang) * rad;
+      const py = Math.sin(ang) * rad;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#fef08a';
+    ctx.fill();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = '#f59e0b';
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 3. 放射状冲击速度线
+  ctx.globalAlpha = fade * 0.85;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(1.2, (1 - u) * 2.6);
+  ctx.strokeStyle = '#ffffff';
+  for (let i = 0; i < 6; i++) {
+    const ang = -Math.PI * 0.92 + (i / 5) * Math.PI * 0.84 + (dir < 0 ? -0.12 : 0.12);
+    const r0 = maxRadius * (0.28 + easeOut * 0.45);
+    const r1 = r0 + maxRadius * (0.22 * (1 - u * 0.6));
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(ang) * r0, Math.sin(ang) * r0);
+    ctx.lineTo(Math.cos(ang) * r1, Math.sin(ang) * r1);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+/** 红温/持续 T3 高算力时的暖橘炽热氛围背光（纯椭圆叠加，零渐变分配） */
+export function drawOverheatGlow(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  t: number,
+): void {
+  const pulse = 0.86 + 0.14 * Math.sin(t * 7.2);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+
+  ctx.globalAlpha = 0.14 * pulse;
+  ctx.fillStyle = '#f97316';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx * (1.08 + 0.04 * pulse), ry * (1.06 + 0.04 * pulse), 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.globalAlpha = 0.12 * pulse;
+  ctx.fillStyle = '#fb7185';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - ry * 0.08, rx * 0.78, ry * 0.76, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.globalAlpha = 0.09 * pulse;
+  ctx.fillStyle = '#fde047';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + ry * 0.25, rx * 0.56, ry * 0.36, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}

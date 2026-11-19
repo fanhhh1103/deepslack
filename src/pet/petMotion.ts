@@ -130,14 +130,21 @@ export const POSTURE_CROUCH_MS = 140;
 export const POSTURE_HOP_MS = 200;
 export const POSTURE_BRIDGE_MS = POSTURE_CROUCH_MS + POSTURE_HOP_MS;
 
-export type SpriteBlendKind = 'instant' | 'blink' | 'step' | 'beat' | 'pose';
+export const POSTURE_GENTLE_TRANS_MS = 135;
+export const POSTURE_GENTLE_SETTLE_MS = 145;
+export const POSTURE_GENTLE_BRIDGE_MS = POSTURE_GENTLE_TRANS_MS + POSTURE_GENTLE_SETTLE_MS;
+
+export type PostureTransitionStyle = 'energetic' | 'gentle';
+
+export type SpriteBlendKind = 'instant' | 'smear' | 'blink' | 'step' | 'beat' | 'pose';
 
 export const SPRITE_BLEND_MS: Record<SpriteBlendKind, number> = {
   instant: 0,
+  smear: 50,
   blink: 65,
-  step: 65,
-  beat: 160,
-  pose: 140,
+  step: 75,
+  beat: 150,
+  pose: 150,
 };
 
 export interface SpriteBlendFrame<TSprite = unknown> {
@@ -147,13 +154,14 @@ export interface SpriteBlendFrame<TSprite = unknown> {
   toSprite: TSprite | null;
   alphaFrom: number;
   alphaTo: number;
+  fromKey: string;
   key: string;
 }
 
 /**
  * 等功率正余弦跨帧混合器：
  * - 采用 smoothstep + cos/sin 等功率过渡（重叠区合成不透明度 >= 0.914，消除切帧闪烁与透底）
- * - 按切帧语义自动分级时长（blink/step 65ms，pose 140ms，beat 160ms）
+ * - 按切帧语义自动分级时长（smear 50ms，blink 65ms，4帧 step 75ms，pose/beat 150ms）
  */
 export class SpriteBlender<TSprite = unknown> {
   private currentSprite: TSprite | null = null;
@@ -162,6 +170,7 @@ export class SpriteBlender<TSprite = unknown> {
   private fromKey = '';
   private elapsedMs = 0;
   private durationMs = 0;
+  private holdElapsedMs = Number.POSITIVE_INFINITY;
 
   get active(): boolean {
     return this.fromSprite !== null && this.durationMs > 0 && this.elapsedMs < this.durationMs;
@@ -175,6 +184,10 @@ export class SpriteBlender<TSprite = unknown> {
     return this.fromKey;
   }
 
+  get holdMs(): number {
+    return this.holdElapsedMs;
+  }
+
   reset(): void {
     this.currentSprite = null;
     this.currentKey = '';
@@ -182,14 +195,20 @@ export class SpriteBlender<TSprite = unknown> {
     this.fromKey = '';
     this.elapsedMs = 0;
     this.durationMs = 0;
+    this.holdElapsedMs = Number.POSITIVE_INFINITY;
   }
 
-  sync(nextSprite: TSprite | null, nextKey: string, kind: SpriteBlendKind = 'pose'): void {
+  sync(
+    nextSprite: TSprite | null,
+    nextKey: string,
+    kind: SpriteBlendKind = 'pose',
+    minHoldMs = 0,
+  ): boolean {
     if (nextSprite === null) {
       if (this.currentSprite === null) {
         this.currentKey = nextKey;
       }
-      return;
+      return false;
     }
 
     if (this.currentSprite === null || kind === 'instant') {
@@ -199,22 +218,33 @@ export class SpriteBlender<TSprite = unknown> {
       this.fromKey = '';
       this.elapsedMs = 0;
       this.durationMs = 0;
-      return;
+      this.holdElapsedMs = 0;
+      return true;
     }
 
     if (nextKey !== this.currentKey || nextSprite !== this.currentSprite) {
+      if (minHoldMs > 0 && this.holdElapsedMs < minHoldMs) {
+        return false;
+      }
       this.fromSprite = this.currentSprite;
       this.fromKey = this.currentKey;
       this.currentSprite = nextSprite;
       this.currentKey = nextKey;
       this.durationMs = SPRITE_BLEND_MS[kind];
       this.elapsedMs = 0;
+      this.holdElapsedMs = 0;
+      return true;
     }
+
+    return false;
   }
 
   step(dtMs: number): SpriteBlendFrame<TSprite> {
     const safeDt = Number.isFinite(dtMs) && dtMs > 0 ? dtMs : 0;
     this.elapsedMs += safeDt;
+    if (this.currentSprite !== null) {
+      this.holdElapsedMs += safeDt;
+    }
 
     if (!this.fromSprite || this.durationMs <= 0 || this.elapsedMs >= this.durationMs) {
       this.fromSprite = null;
@@ -228,6 +258,7 @@ export class SpriteBlender<TSprite = unknown> {
         toSprite: this.currentSprite,
         alphaFrom: 0,
         alphaTo: 1,
+        fromKey: '',
         key: this.currentKey,
       };
     }
@@ -242,6 +273,7 @@ export class SpriteBlender<TSprite = unknown> {
       toSprite: this.currentSprite,
       alphaFrom: Math.cos(angle),
       alphaTo: Math.sin(angle),
+      fromKey: this.fromKey,
       key: this.currentKey,
     };
   }
@@ -249,21 +281,24 @@ export class SpriteBlender<TSprite = unknown> {
 
 export interface PostureBridgeFrame<TSprite = unknown> {
   active: boolean;
+  style: PostureTransitionStyle;
   useCrouch: boolean;
+  useSitTrans: boolean;
   hopOffsetY: number;
+  softSquash: number;
   ghostAlpha: number;
   ghostSprite: TSprite | null;
   justLanded: boolean;
 }
 
 /**
- * 姿态族切换与落地缓冲桥（340ms）：
- * - 前 140ms：预备微蹲（useCrouch = true）
- * - 后 200ms：平滑抛物线小跳 -hopH * 4 * u * (1 - u)（跨帧混合统一由 SpriteBlender 承担）
- * - 结束时输出 justLanded = true 触发落地果冻脉冲
+ * 双档姿态族切换与落地缓冲桥：
+ * - energetic（340ms）：前 140ms 蓄力微蹲（useCrouch）+ 后 200ms 抛物线小跳 + 落地果冻脉冲
+ * - gentle（280ms）：绝不闪现紧张微蹲（useCrouch 恒为 false），前 135ms 可用 sit_trans 优雅过渡 + 柔缓挤压缓冲
  */
 export class PostureBridge<TSprite = unknown> {
   currentPosture: PostureFamily = 'stand';
+  private transitionStyle: PostureTransitionStyle = 'energetic';
   private _active = false;
   private elapsedMs = 0;
 
@@ -273,13 +308,23 @@ export class PostureBridge<TSprite = unknown> {
     return this._active;
   }
 
+  get style(): PostureTransitionStyle {
+    return this.transitionStyle;
+  }
+
   reset(posture: PostureFamily = 'stand'): void {
     this.currentPosture = posture;
+    this.transitionStyle = 'energetic';
     this._active = false;
     this.elapsedMs = 0;
   }
 
-  sync(nextPosture: PostureFamily, _prevSprite: TSprite | null = null, force = false): boolean {
+  sync(
+    nextPosture: PostureFamily,
+    _prevSprite: TSprite | null = null,
+    force = false,
+    style: PostureTransitionStyle = 'energetic',
+  ): boolean {
     if (nextPosture === 'air') {
       this.reset('air');
       return false;
@@ -288,6 +333,7 @@ export class PostureBridge<TSprite = unknown> {
       return false;
     }
     this.currentPosture = nextPosture;
+    this.transitionStyle = style;
     this._active = true;
     this.elapsedMs = 0;
     return true;
@@ -297,8 +343,11 @@ export class PostureBridge<TSprite = unknown> {
     if (!this._active) {
       return {
         active: false,
+        style: this.transitionStyle,
         useCrouch: false,
+        useSitTrans: false,
         hopOffsetY: 0,
+        softSquash: 0,
         ghostAlpha: 0,
         ghostSprite: null,
         justLanded: false,
@@ -308,13 +357,48 @@ export class PostureBridge<TSprite = unknown> {
     const safeDt = Number.isFinite(dtMs) && dtMs > 0 ? dtMs : 0;
     this.elapsedMs += safeDt;
 
+    if (this.transitionStyle === 'gentle') {
+      if (this.elapsedMs >= POSTURE_GENTLE_BRIDGE_MS) {
+        this._active = false;
+        this.elapsedMs = 0;
+        return {
+          active: false,
+          style: 'gentle',
+          useCrouch: false,
+          useSitTrans: false,
+          hopOffsetY: 0,
+          softSquash: 0,
+          ghostAlpha: 0,
+          ghostSprite: null,
+          justLanded: true,
+        };
+      }
+
+      const u = clamp(this.elapsedMs / POSTURE_GENTLE_BRIDGE_MS, 0, 1);
+      const softSquash = 0.055 * Math.sin(Math.PI * u);
+      return {
+        active: true,
+        style: 'gentle',
+        useCrouch: false,
+        useSitTrans: this.elapsedMs < POSTURE_GENTLE_TRANS_MS,
+        hopOffsetY: 0,
+        softSquash,
+        ghostAlpha: 0,
+        ghostSprite: null,
+        justLanded: false,
+      };
+    }
+
     if (this.elapsedMs >= POSTURE_BRIDGE_MS) {
       this._active = false;
       this.elapsedMs = 0;
       return {
         active: false,
+        style: 'energetic',
         useCrouch: false,
+        useSitTrans: false,
         hopOffsetY: 0,
+        softSquash: 0,
         ghostAlpha: 0,
         ghostSprite: null,
         justLanded: true,
@@ -324,8 +408,11 @@ export class PostureBridge<TSprite = unknown> {
     if (this.elapsedMs < POSTURE_CROUCH_MS) {
       return {
         active: true,
+        style: 'energetic',
         useCrouch: true,
+        useSitTrans: false,
         hopOffsetY: 0,
+        softSquash: 0,
         ghostAlpha: 0,
         ghostSprite: null,
         justLanded: false,
@@ -336,8 +423,11 @@ export class PostureBridge<TSprite = unknown> {
     const hopOffsetY = -this.hopH * 4 * u * (1 - u);
     return {
       active: true,
+      style: 'energetic',
       useCrouch: false,
+      useSitTrans: false,
       hopOffsetY,
+      softSquash: 0,
       ghostAlpha: 0,
       ghostSprite: null,
       justLanded: false,
@@ -349,21 +439,23 @@ export class PostureBridge<TSprite = unknown> {
     nextPosture: PostureFamily,
     prevSprite: TSprite | null = null,
     force = false,
+    style: PostureTransitionStyle = 'energetic',
   ): PostureBridgeFrame<TSprite> {
-    this.sync(nextPosture, prevSprite, force);
+    this.sync(nextPosture, prevSprite, force, style);
     return this.step(dtMs);
   }
 }
 
 export interface StrideOutput {
   frameA: boolean;
+  frameIndex: 0 | 1 | 2 | 3;
   hopY: number;
   leanRad: number;
   footPlanted: boolean;
   justStepped: boolean;
 }
 
-/** 步频时钟：按真实移动像素速率推进步态相位（步频封顶 <= 3.8 步/秒，余弦拱形消除落地点尖刺） */
+/** 步频时钟：按真实移动像素速率推进 4 帧步态相位（步频封顶 <= 3.8 步/秒，余弦拱形消除落地点尖刺） */
 export class StrideClock {
   private theta = 0;
 
@@ -384,8 +476,10 @@ export class StrideClock {
 
     if (absSpeed <= 0.01 || safeDt <= 0) {
       const stepIndex = Math.floor(this.theta / Math.PI);
+      const frameIndex = (((Math.floor((this.theta / Math.PI) * 2) % 4) + 4) % 4) as 0 | 1 | 2 | 3;
       return {
         frameA: stepIndex % 2 === 0,
+        frameIndex,
         hopY: 0,
         leanRad: 0,
         footPlanted: true,
@@ -402,6 +496,7 @@ export class StrideClock {
 
     const justStepped = nextIndex > prevIndex;
     const frameA = nextIndex % 2 === 0;
+    const frameIndex = (((Math.floor((this.theta / Math.PI) * 2) % 4) + 4) % 4) as 0 | 1 | 2 | 3;
     const hopPhase = 0.5 * (1 - Math.cos(2 * this.theta));
     const hopY = -hopPhase * this.hopAmp;
     const footPlanted = hopPhase < 0.08 || justStepped;
@@ -409,6 +504,7 @@ export class StrideClock {
 
     return {
       frameA,
+      frameIndex,
       hopY,
       leanRad,
       footPlanted,

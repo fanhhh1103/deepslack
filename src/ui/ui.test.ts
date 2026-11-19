@@ -21,8 +21,17 @@ import {
   buildDraftOverlayHtml,
 } from './overlays';
 import { buildReportModalHtml, buildShareText } from './reportCard';
+import { drawBonkShockwave, drawOverheatGlow } from '../pet/fishFx';
+import { analyzeMotionTrack } from '../pet/motionAudit';
 import { playSfx, type SfxName } from '../pet/petAudio';
-import { mountPet, type PetCharId, type PetMood } from '../pet/petRenderer';
+import {
+  DAFEIYU_ANCHOR_X,
+  getSpriteAnchorX,
+  mountPet,
+  type PetCharId,
+  type PetMood,
+  type PetMotionTelemetry,
+} from '../pet/petRenderer';
 import {
   buildCharSwitcherHtml,
   buildFootCapsuleStatsHtml,
@@ -997,6 +1006,289 @@ describe('Pet multi-action renderer & procedural SFX', () => {
 
       pet.destroy();
     } finally {
+      performance.now = origPerfNow;
+      globalThis.document = origDocument;
+      globalThis.requestAnimationFrame = origRaf;
+      globalThis.cancelAnimationFrame = origCancelRaf;
+      globalThis.Image = origImage;
+    }
+  });
+
+  it('enforces drowsy blink-only nod, gentle sit_trans bridges, per-sprite anchorX, 4-frame cycles, 3-stage bonk + hitstop/shockwave, idle_b micro-life, and sustained T3 overheat', async () => {
+    const noop = () => {};
+    const drawnCalls: Array<{ src: string; dx: number; dy: number; dw: number; dh: number }> = [];
+    let arcCalls = 0;
+    const requestedUrls: string[] = [];
+
+    const ctxProxy = new Proxy(
+      {},
+      {
+        get: (_t, prop) => {
+          if (prop === 'measureText') return (t: string) => ({ width: t.length * 8 });
+          if (prop === 'arc') {
+            return () => {
+              arcCalls++;
+            };
+          }
+          if (prop === 'drawImage') {
+            return (img: { src?: string }, ...args: number[]) => {
+              if (!img?.src) return;
+              if (args.length === 8) {
+                drawnCalls.push({ src: img.src, dx: args[4], dy: args[5], dw: args[6], dh: args[7] });
+              } else if (args.length === 4) {
+                drawnCalls.push({ src: img.src, dx: args[0], dy: args[1], dw: args[2], dh: args[3] });
+              }
+            };
+          }
+          return noop;
+        },
+        set: () => true,
+      },
+    ) as unknown as CanvasRenderingContext2D;
+
+    const listeners: Record<string, (ev: unknown) => void> = {};
+    const makeFakeCanvas = (capture: boolean) =>
+      ({
+        width: 256,
+        height: 234,
+        clientWidth: 256,
+        clientHeight: 234,
+        getContext: () => ctxProxy,
+        getBoundingClientRect: () => ({ left: 0, top: 0, right: 256, bottom: 234, width: 256, height: 234 }),
+        addEventListener: (name: string, cb: (ev: unknown) => void) => {
+          if (capture) listeners[name] = cb;
+        },
+        removeEventListener: noop,
+      }) as unknown as HTMLCanvasElement;
+
+    const origDocument = globalThis.document;
+    const origRaf = globalThis.requestAnimationFrame;
+    const origCancelRaf = globalThis.cancelAnimationFrame;
+    const origImage = globalThis.Image;
+    const origPerfNow = performance.now.bind(performance);
+    const origRandom = Math.random;
+
+    const rafHolder: { cb: FrameRequestCallback | null } = { cb: null };
+    let simNow = 30_000;
+    performance.now = () => simNow;
+    Math.random = () => 0.35;
+
+    class FullMockImage {
+      private _src = '';
+      naturalWidth = 567;
+      naturalHeight = 712;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      get src(): string {
+        return this._src;
+      }
+      set src(val: string) {
+        this._src = val;
+        requestedUrls.push(val);
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+
+    globalThis.document = {
+      hidden: false,
+      createElement: () => makeFakeCanvas(false),
+      querySelector: () => null,
+    } as unknown as Document;
+    globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+      rafHolder.cb = cb;
+      return 1;
+    }) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = noop as typeof cancelAnimationFrame;
+    globalThis.Image = FullMockImage as unknown as typeof Image;
+
+    const flushMicrotasks = () => new Promise<void>((r) => globalThis.setTimeout(r, 0));
+
+    try {
+      // Direct FX helpers smoke check
+      arcCalls = 0;
+      drawBonkShockwave(ctxProxy, 128, 200, 0, 42, 1);
+      expect(arcCalls).toBe(0);
+      drawBonkShockwave(ctxProxy, 128, 200, 0.25, 42, 1);
+      expect(arcCalls).toBeGreaterThanOrEqual(2);
+      expect(() => drawOverheatGlow(ctxProxy, 128, 140, 60, 70, 1.5)).not.toThrow();
+
+      // Anchor lookup checks
+      expect(getSpriteAnchorX('dafeiyu_slack')).toBe(DAFEIYU_ANCHOR_X.dafeiyu_slack);
+      expect(getSpriteAnchorX('daju_work_a')).toBe(0.5);
+
+      const pet = await mountPet(makeFakeCanvas(true), './assets');
+      await flushMicrotasks();
+
+      const step = (ms: number) => {
+        simNow += ms;
+        rafHolder.cb?.(simNow);
+      };
+      const run = (totalMs: number, dtMs = 20) => {
+        for (let t = 0; t < totalMs; t += dtMs) step(dtMs);
+      };
+
+      // 1. Drowsy nod cycle uses blink, NEVER flashes sleep whale pillow
+      pet.setMood('drowsy', '', 6000);
+      drawnCalls.length = 0;
+      run(5200, 40);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_drowsy.png'))).toBe(true);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_blink.png'))).toBe(true);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_sleep.png'))).toBe(false);
+
+      // 2. Gentle posture transitions (sleep <-> drowsy, idle <-> music, eat -> idle) use sit_trans and NEVER flash crouch
+      pet.setMood('idle');
+      run(400, 20);
+      drawnCalls.length = 0;
+      pet.triggerAction('sleep');
+      run(360, 20);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_sit_trans.png'))).toBe(true);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_crouch.png'))).toBe(false);
+
+      drawnCalls.length = 0;
+      listeners.click?.({ clientX: 128, clientY: 160 }); // sleep -> drowsy wake stretch
+      run(360, 20);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_sit_trans.png'))).toBe(true);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_crouch.png'))).toBe(false);
+      run(700, 40); // finish wake stretch back to idle
+
+      drawnCalls.length = 0;
+      pet.triggerAction('music');
+      run(360, 20);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_sit_trans.png'))).toBe(true);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_crouch.png'))).toBe(false);
+
+      // 3. 4-frame music cycle (music_a..d)
+      drawnCalls.length = 0;
+      run(3800, 40);
+      for (const sfx of ['music_a', 'music_b', 'music_c', 'music_d']) {
+        expect(drawnCalls.some((c) => c.src.endsWith(`/dafeiyu_${sfx}.png`))).toBe(true);
+      }
+
+      // 4. 4-frame eat cycle (eat_a..d) + gentle eat -> idle (no crouch!)
+      pet.setMood('eat', '干饭', 1850);
+      drawnCalls.length = 0;
+      run(1850, 30);
+      for (const sfx of ['eat_a', 'eat_b', 'eat_c', 'eat_d']) {
+        expect(drawnCalls.some((c) => c.src.endsWith(`/dafeiyu_${sfx}.png`))).toBe(true);
+      }
+      drawnCalls.length = 0;
+      run(360, 20); // eat -> idle gentle transition
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_sit_trans.png'))).toBe(true);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_crouch.png'))).toBe(false);
+
+      // 5. 4-frame walk cycle (walk_a..d) + per-sprite anchorX alignment
+      pet.setLocomotion(1, false, 1);
+      drawnCalls.length = 0;
+      run(1300, 25);
+      for (const sfx of ['walk_a', 'walk_b', 'walk_c', 'walk_d']) {
+        expect(drawnCalls.some((c) => c.src.endsWith(`/dafeiyu_${sfx}.png`))).toBe(true);
+      }
+      const walkCall = drawnCalls.find((c) => c.src.endsWith('/dafeiyu_walk_a.png'))!;
+      const walkBodyCenter = walkCall.dx + walkCall.dw * getSpriteAnchorX('dafeiyu_walk_a');
+      expect(Math.abs(walkBodyCenter - 128)).toBeLessThan(12);
+      pet.setLocomotion(0);
+      run(400, 25);
+
+      // Slack anchorX alignment check (body centered at 128 despite right-protruding whale tail)
+      pet.setMood('slack', '', 1500);
+      run(360, 25);
+      drawnCalls.length = 0;
+      step(40);
+      const slackCall = drawnCalls.find((c) => c.src.endsWith('/dafeiyu_slack.png'));
+      if (slackCall) {
+        const slackBodyCenter = slackCall.dx + slackCall.dw * getSpriteAnchorX('dafeiyu_slack');
+        expect(Math.abs(slackBodyCenter - 128)).toBeLessThan(12);
+      }
+      pet.setMood('idle');
+      run(400, 25);
+
+      // 6. 4-frame work cycle (work_a..d) at Tier 2 + Sustained Tier-3 Overheat (overheat / overheat_b)
+      pet.setRateTier(2, 1600);
+      pet.setBaseMood('work');
+      drawnCalls.length = 0;
+      run(1400, 25);
+      for (const sfx of ['work_a', 'work_b', 'work_c', 'work_d']) {
+        expect(drawnCalls.some((c) => c.src.endsWith(`/dafeiyu_${sfx}.png`))).toBe(true);
+      }
+
+      pet.setRateTier(3, 4800);
+      drawnCalls.length = 0;
+      run(800, 25);
+      expect(pet.getMood()).toBe('work');
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_overheat.png'))).toBe(true);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_overheat_b.png'))).toBe(true);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_work_a.png'))).toBe(false);
+
+      // 7. 3-stage Bug Bonk (bonk_a -> bonk_mid -> bonk_b) + shockwave
+      pet.setRateTier(0, 0);
+      pet.setBaseMood('idle');
+      pet.setMood('idle');
+      run(400, 25);
+      drawnCalls.length = 0;
+      arcCalls = 0;
+      expect(pet.dropItem('bug', 'toy')).toBe(true);
+      run(2800, 16);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_bonk_a.png'))).toBe(true);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_bonk_mid.png'))).toBe(true);
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_bonk_b.png'))).toBe(true);
+      expect(arcCalls).toBeGreaterThan(0);
+
+      // 8. Smooth Idle Micro-Life (idle_b appears during 6-9s standby before 32s drowsy)
+      pet.setMood('idle');
+      drawnCalls.length = 0;
+      run(9600, 50);
+      expect(pet.getMood()).toBe('idle');
+      expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_idle_b.png'))).toBe(true);
+
+      // 9. Other characters (daju) stay on 2-frame packs & gracefully fall back at T3
+      pet.setCharacter('daju');
+      await flushMicrotasks();
+      expect(requestedUrls).not.toContain('./assets/pet/daju_walk_c.png');
+      expect(requestedUrls).not.toContain('./assets/pet/daju_overheat_b.png');
+      pet.setRateTier(3, 4800);
+      pet.setBaseMood('work');
+      drawnCalls.length = 0;
+      run(600, 25);
+      expect(
+        drawnCalls.some((c) => c.src.endsWith('/daju_work_a.png') || c.src.endsWith('/daju_work_b.png')),
+      ).toBe(true);
+
+      // 10. Regression for live 60FPS `03_walk_turn_peek`: walk_d -> peek within 33.3ms holds >= 48ms with zero violations
+      pet.setCharacter('dafeiyu');
+      await flushMicrotasks();
+      pet.resetAuditState();
+      const dt60 = 1000 / 60;
+      const walkPeekSamples: PetMotionTelemetry[] = [];
+      let walkPeekPhase = 0;
+      for (let f = 0; f < 180; f++) {
+        const elapsedMs = f * dt60;
+        if (walkPeekPhase === 0) {
+          walkPeekPhase = 1;
+          pet.setLocomotion(-1, false, 1);
+        } else if (walkPeekPhase === 1 && elapsedMs >= 1000) {
+          walkPeekPhase = 2;
+          pet.setLocomotion(1, false, 1);
+        } else if (walkPeekPhase === 2 && elapsedMs >= 1950) {
+          walkPeekPhase = 3;
+          pet.setLocomotion(1, true, 0);
+        } else if (walkPeekPhase === 3 && elapsedMs >= 2700) {
+          walkPeekPhase = 4;
+          pet.setLocomotion(0);
+        }
+        walkPeekSamples.push(pet.stepAuditFrame(dt60));
+      }
+      const walkPeekReport = analyzeMotionTrack('regression_03_walk_turn_peek', walkPeekSamples, {
+        maxSpriteSwapsPerSec: 4.6,
+        maxTiltStepDeg: 2.8,
+        minPoseHoldMs: 45,
+      });
+      expect(walkPeekReport.violations).toEqual([]);
+      expect(walkPeekReport.metrics.minPoseHoldMsObserved).toBeGreaterThanOrEqual(48);
+      expect(walkPeekSamples.some((s) => s.spriteKey === 'dafeiyu_peek')).toBe(true);
+
+      pet.destroy();
+    } finally {
+      Math.random = origRandom;
       performance.now = origPerfNow;
       globalThis.document = origDocument;
       globalThis.requestAnimationFrame = origRaf;

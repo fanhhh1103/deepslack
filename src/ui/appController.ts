@@ -313,10 +313,35 @@ export class CyberPetApp {
   }
 
   private buildShellDom(): void {
+    const heroHeaderHtml = !this.isTauri
+      ? `
+        <header class="web-hero-header">
+          <div class="web-hero-title-row">
+            <h1 class="web-hero-title">🐳 DeepSlack · 深度摸鱼（烧币版）</h1>
+            <div class="web-hero-links">
+              <a
+                class="web-hero-link is-primary"
+                href="https://github.com/fanhhh1103/deepslack/releases/latest"
+                target="_blank"
+                rel="noopener"
+              >⬇️ 下载 macOS / Windows</a>
+              <a
+                class="web-hero-link"
+                href="https://github.com/fanhhh1103/deepslack"
+                target="_blank"
+                rel="noopener"
+              >⭐ GitHub</a>
+            </div>
+          </div>
+          <p class="web-hero-subtitle">烧真实 AI Token 喂养的赛博电子鸡 · 点桌宠 / 丢玩具 3 秒免安装试玩</p>
+        </header>
+      `
+      : '';
+
     const simBarHtml = !this.isTauri
       ? `
         <div class="web-sim-bar" id="web-sim-bar">
-          <span class="sim-bar-label">🧪 纯享桌宠调试</span>
+          <span class="sim-bar-label">🎮 3 秒试玩交互</span>
           ${SIM_RATE_BUTTONS.map(
             (btn) => `
               <button
@@ -363,7 +388,7 @@ export class CyberPetApp {
       : '';
 
     this.rootEl.innerHTML = `
-      ${simBarHtml}
+      ${heroHeaderHtml}
       <div class="browser-stage-shell">
         <div class="widget-root is-pure-pet" id="widget-root">
           <div class="floating-toast" id="floating-toast" role="status" aria-live="polite"></div>
@@ -382,6 +407,7 @@ export class CyberPetApp {
           </section>
         </div>
       </div>
+      ${simBarHtml}
     `;
 
     this.widgetRootEl = this.rootEl.querySelector('#widget-root')!;
