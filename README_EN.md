@@ -26,7 +26,7 @@ When your terminal is idle, she slacks off eating dried fish — hover over her 
 
 ---
 
-## 🎀 Meet the 5 Switchable AI Girl Pets
+## 🎀 Meet the 5 Switchable AI Girl Pets (All 39-Sprite Full Animations)
 
 | <img src="./public/assets/pet/dafeiyu.png" width="88" alt="Dafeiyu" /> | <img src="./public/assets/pet/daju.png" width="88" alt="Daju" /> | <img src="./public/assets/pet/bailong.png" width="88" alt="Bailong" /> | <img src="./public/assets/pet/xingmao.png" width="88" alt="Xingmao" /> | <img src="./public/assets/pet/grok.png" width="88" alt="Grok" /> |
 | :---: | :---: | :---: | :---: | :---: |
@@ -36,14 +36,14 @@ When your terminal is idle, she slacks off eating dried fish — hover over her 
 
 ## ⬇️ Direct Downloads (macOS & Windows)
 
-Prebuilt installers — no Rust or Node required (full release page: [v1.0.0](https://github.com/fanhhh1103/deepslack/releases/tag/v1.0.0)):
+Prebuilt installers — no Rust or Node required (full release page: [v1.1.0](https://github.com/fanhhh1103/deepslack/releases/tag/v1.1.0)):
 
 | Platform | Direct Download | First Launch Note (Unsigned Open-Source Build) |
 | :--- | :--- | :--- |
-| **macOS (Apple Silicon M1–M4)** | **[DeepSlack_1.0.0_aarch64.dmg](https://github.com/fanhhh1103/deepslack/releases/download/v1.0.0/DeepSlack_1.0.0_aarch64.dmg)** | Drag `DeepSlack.app` to Applications. If Gatekeeper flags it as damaged/unidentified, run once:<br/>`xattr -cr /Applications/DeepSlack.app` |
-| **macOS (Intel)** | **[DeepSlack_1.0.0_x64.dmg](https://github.com/fanhhh1103/deepslack/releases/download/v1.0.0/DeepSlack_1.0.0_x64.dmg)** | Same as above: `xattr -cr /Applications/DeepSlack.app` |
-| **Windows 10 / 11 (x64 · Recommended)** | **[DeepSlack_1.0.0_x64-setup.exe](https://github.com/fanhhh1103/deepslack/releases/download/v1.0.0/DeepSlack_1.0.0_x64-setup.exe)** | Per-user installer (no admin prompt). On Windows SmartScreen, click **"More info" → "Run anyway"**. |
-| **Windows 10 / 11 (x64 · MSI)** | **[DeepSlack_1.0.0_x64_en-US.msi](https://github.com/fanhhh1103/deepslack/releases/download/v1.0.0/DeepSlack_1.0.0_x64_en-US.msi)** | Standard Windows MSI installer. |
+| **macOS (Apple Silicon M1–M4)** | **[DeepSlack_1.1.0_aarch64.dmg](https://github.com/fanhhh1103/deepslack/releases/download/v1.1.0/DeepSlack_1.1.0_aarch64.dmg)** | Drag `DeepSlack.app` to Applications. If Gatekeeper flags it as damaged/unidentified, run once:<br/>`xattr -cr /Applications/DeepSlack.app` |
+| **macOS (Intel)** | **[DeepSlack_1.1.0_x64.dmg](https://github.com/fanhhh1103/deepslack/releases/download/v1.1.0/DeepSlack_1.1.0_x64.dmg)** | Same as above: `xattr -cr /Applications/DeepSlack.app` |
+| **Windows 10 / 11 (x64 · Recommended)** | **[DeepSlack_1.1.0_x64-setup.exe](https://github.com/fanhhh1103/deepslack/releases/download/v1.1.0/DeepSlack_1.1.0_x64-setup.exe)** | Per-user installer (no admin prompt). On Windows SmartScreen, click **"More info" → "Run anyway"**. |
+| **Windows 10 / 11 (x64 · MSI)** | **[DeepSlack_1.1.0_x64_en-US.msi](https://github.com/fanhhh1103/deepslack/releases/download/v1.1.0/DeepSlack_1.1.0_x64_en-US.msi)** | Standard Windows MSI installer. |
 
 > 🗳️ **Want Cursor, Windsurf, OpenClaw, or Kiro support next?** Vote in our pinned poll (and drop a ⭐): **[Issue #1 Poll](https://github.com/fanhhh1103/deepslack/issues/1)**
 

@@ -1,6 +1,6 @@
 [package]
 name = "cyber-pet-slot"
-version = "1.0.0"
+version = "1.1.0"
 description = "DeepSlack · 深度摸鱼（烧币版）— 本地隐私安全 Token 扫描与透明桌面陪伴外壳"
 authors = ["evanpunk2077 <https://x.com/evanpunk2077>"]
 license = "MIT"

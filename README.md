@@ -26,7 +26,7 @@
 
 ---
 
-## 🎀 全员 5 位 AI 娘全家福（一键切换）
+## 🎀 全员 5 位 AI 娘全家福（一键切换 · 全员 39 帧丝滑全动作）
 
 | <img src="./public/assets/pet/dafeiyu.png" width="88" alt="大肥鱼" /> | <img src="./public/assets/pet/daju.png" width="88" alt="大橘" /> | <img src="./public/assets/pet/bailong.png" width="88" alt="白龙" /> | <img src="./public/assets/pet/xingmao.png" width="88" alt="星猫" /> | <img src="./public/assets/pet/grok.png" width="88" alt="Grok娘" /> |
 | :---: | :---: | :---: | :---: | :---: |
@@ -36,14 +36,14 @@
 
 ## ⬇️ 一键直链下载（macOS & Windows）
 
-无需装 Rust 或 Node，直接点击下方对应安装包下载即用（完整列表见 [Releases v1.0.0](https://github.com/fanhhh1103/deepslack/releases/tag/v1.0.0)）：
+无需装 Rust 或 Node，直接点击下方对应安装包下载即用（完整列表见 [Releases v1.1.0](https://github.com/fanhhh1103/deepslack/releases/tag/v1.1.0)）：
 
 | 平台 / Platform | 一键直链下载 / Direct Download | 首次打开说明 / First Launch Tip |
 | :--- | :--- | :--- |
-| **macOS (Apple Silicon M1–M4)** | **[DeepSlack_1.0.0_aarch64.dmg](https://github.com/fanhhh1103/deepslack/releases/download/v1.0.0/DeepSlack_1.0.0_aarch64.dmg)** | 拖入 Applications 后若提示未签名/已损坏，终端执行一次：<br/>`xattr -cr /Applications/DeepSlack.app` *(unsigned build fix)* |
-| **macOS (Intel)** | **[DeepSlack_1.0.0_x64.dmg](https://github.com/fanhhh1103/deepslack/releases/download/v1.0.0/DeepSlack_1.0.0_x64.dmg)** | 同上：`xattr -cr /Applications/DeepSlack.app` |
-| **Windows 10 / 11 (x64 · 推荐)** | **[DeepSlack_1.0.0_x64-setup.exe](https://github.com/fanhhh1103/deepslack/releases/download/v1.0.0/DeepSlack_1.0.0_x64-setup.exe)** | 免管理员安装；若 SmartScreen 提示点 **「更多信息」→「仍要运行」** *(More info → Run anyway)* |
-| **Windows 10 / 11 (x64 · MSI)** | **[DeepSlack_1.0.0_x64_en-US.msi](https://github.com/fanhhh1103/deepslack/releases/download/v1.0.0/DeepSlack_1.0.0_x64_en-US.msi)** | 标准 MSI 安装包 / Standard Windows MSI installer |
+| **macOS (Apple Silicon M1–M4)** | **[DeepSlack_1.1.0_aarch64.dmg](https://github.com/fanhhh1103/deepslack/releases/download/v1.1.0/DeepSlack_1.1.0_aarch64.dmg)** | 拖入 Applications 后若提示未签名/已损坏，终端执行一次：<br/>`xattr -cr /Applications/DeepSlack.app` *(unsigned build fix)* |
+| **macOS (Intel)** | **[DeepSlack_1.1.0_x64.dmg](https://github.com/fanhhh1103/deepslack/releases/download/v1.1.0/DeepSlack_1.1.0_x64.dmg)** | 同上：`xattr -cr /Applications/DeepSlack.app` |
+| **Windows 10 / 11 (x64 · 推荐)** | **[DeepSlack_1.1.0_x64-setup.exe](https://github.com/fanhhh1103/deepslack/releases/download/v1.1.0/DeepSlack_1.1.0_x64-setup.exe)** | 免管理员安装；若 SmartScreen 提示点 **「更多信息」→「仍要运行」** *(More info → Run anyway)* |
+| **Windows 10 / 11 (x64 · MSI)** | **[DeepSlack_1.1.0_x64_en-US.msi](https://github.com/fanhhh1103/deepslack/releases/download/v1.1.0/DeepSlack_1.1.0_x64_en-US.msi)** | 标准 MSI 安装包 / Standard Windows MSI installer |
 
 > 🗳️ **想接入 Cursor / Windsurf / OpenClaw / Kiro 等下一家 AI 工具？** 欢迎去置顶投票 Issue 投一票（顺手点个 Star ⭐）：**[Issue #1 投票入口](https://github.com/fanhhh1103/deepslack/issues/1)**
 
