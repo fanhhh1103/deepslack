@@ -12,13 +12,47 @@ import {
   type WalkRange,
   type WalkStep,
 } from './fishBrain';
-import type { DropKind, PetBaseMood, PetController, PetEvent } from './petRenderer';
+import type { DropKind, PetBaseMood, PetCharId, PetController, PetEvent } from './petRenderer';
+
+export interface FishLines {
+  overheat: string;
+  tired: string;
+  caught: string;
+}
 
 export const FISH_LINES = {
   overheat: '显卡要干烧啦！老板慢点摇人！！',
   tired: '呼…终于跑完了…',
   caught: '咳！我没摸鱼，刚在深度思考！',
 } as const;
+
+export const CHAR_FISH_LINES: Record<PetCharId, FishLines> = {
+  dafeiyu: FISH_LINES,
+  daju: {
+    overheat: '上下文要溢出啦！别再往里塞文件了！！',
+    tired: '呼…这段长重构终于写完啦…',
+    caught: '咳！我没摸鱼，在给代码构思架构呢！',
+  },
+  bailong: {
+    overheat: '推理链要烧穿算力池啦！！',
+    tired: '呼…总算推演完毕…',
+    caught: '本龙才没摸鱼，正在深度推理！',
+  },
+  xingmao: {
+    overheat: '百万上下文快烧冒烟啦喵！！',
+    tired: '呼噜…跑分跑累了喵…',
+    caught: '喵哇！没摸鱼，刚在读百万上下文喵！',
+  },
+  grok: {
+    overheat: '火力全开！显卡要干爆啦！！',
+    tired: '呼…总算把这波全砍完了…',
+    caught: '切，谁摸鱼了！本小姐刚在巡逻找 Bug！',
+  },
+};
+
+export function getFishLines(charId?: PetCharId): FishLines {
+  return (charId && CHAR_FISH_LINES[charId]) || FISH_LINES;
+}
 
 export const SPARK_SAMPLES = 20;
 
@@ -126,7 +160,7 @@ export class FishDirector {
       this.pet?.setRateTier(this.brain.tier, this.brain.smoothed);
       this.pet?.setBaseMood(this.baseMood());
       if (this.brain.tier >= 3) {
-        this.pet?.setMood('overheat', FISH_LINES.overheat, 1400);
+        this.pet?.setMood('overheat', this.currentLines().overheat, 1400);
       } else {
         this.pet?.setMood('work');
       }
@@ -140,7 +174,7 @@ export class FishDirector {
     if (!this.pet || this.pet.isBusy() || !this.brain.tryCatch(now)) return false;
     this.walker.interrupt(now);
     this.pet.setLocomotion(0);
-    this.pet.setMood('caught', FISH_LINES.caught, 1600);
+    this.pet.setMood('caught', this.currentLines().caught, 1600);
     return true;
   }
 
@@ -191,9 +225,15 @@ export class FishDirector {
     if (!on) this.pet?.setLocomotion(0);
   }
 
+  private currentLines(): FishLines {
+    const charId = typeof this.pet?.getCharacter === 'function' ? this.pet.getCharacter() : 'dafeiyu';
+    return getFishLines(charId);
+  }
+
   private applyEvents(events: BrainEvent[], _now: number): void {
     const pet = this.pet;
     if (!pet || events.length === 0) return;
+    const lines = this.currentLines();
     for (const ev of events) {
       switch (ev.type) {
         case 'tier':
@@ -201,10 +241,10 @@ export class FishDirector {
           pet.setBaseMood(this.baseMood());
           break;
         case 'overheat':
-          pet.setMood('overheat', FISH_LINES.overheat, 1200);
+          pet.setMood('overheat', lines.overheat, 1200);
           break;
         case 'tired':
-          pet.setMood('tired', FISH_LINES.tired, 3500);
+          pet.setMood('tired', lines.tired, 3500);
           break;
         case 'catch-fake':
           pet.playFakeTyping(2000);

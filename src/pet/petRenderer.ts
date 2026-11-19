@@ -186,7 +186,7 @@ const ACTION_SPRITE_SUFFIXES = [
   'eat_b',
   'sleep',
 ] as const;
-/** 大肥鱼专属摸鱼小女仆贴图（缺失时优雅回退到现有贴图 + 特效） */
+/** 全员 5 位 AI 娘 39 贴图扩展动作包（缺失时优雅回退到基础立绘 + 特效） */
 const FUN_SPRITE_SUFFIXES = [
   'walk_a',
   'walk_b',
@@ -218,14 +218,14 @@ const FUN_SPRITE_SUFFIXES = [
   'bonk_b',
   'idle_b',
 ] as const;
-const FUN_SPRITE_CHARS: readonly PetCharId[] = ['dafeiyu'];
+const FUN_SPRITE_CHARS: readonly PetCharId[] = ALL_CHARS;
 type ActionSpriteSuffix =
   | (typeof ACTION_SPRITE_SUFFIXES)[number]
   | (typeof FUN_SPRITE_SUFFIXES)[number];
 
 /**
  * 大肥鱼各姿态水平重心锚点（归一化 0..1，排除长尾巴横向外伸），
- * 消除待机/走路/摸鱼/眩晕切换时的 10-18px 水平横移跳变；其余角色默认 0.5。
+ * 保留独立导出以兼容既有测试与外部引用。
  */
 export const DAFEIYU_ANCHOR_X: Record<string, number> = {
   dafeiyu: 0.473,
@@ -269,8 +269,180 @@ export const DAFEIYU_ANCHOR_X: Record<string, number> = {
   dafeiyu_eat_d: 0.418,
 };
 
+/**
+ * 全员 5 位 AI 娘（195 张贴图）各姿态水平重心锚点（归一化 0..1，排除长尾巴/武器横向外伸），
+ * 消除待机/走路/摸鱼/眩晕/重锤切换时的水平横移跳变；未收录键名回退 0.5。
+ */
+export const SPRITE_ANCHOR_X: Record<string, number> = {
+  ...DAFEIYU_ANCHOR_X,
+
+  // daju (39 sprites — measured by @art-daju #37)
+  daju: 0.49,
+  daju_blink: 0.49,
+  daju_idle_b: 0.49,
+  daju_sit_trans: 0.488,
+  daju_pat: 0.491,
+  daju_happy: 0.491,
+  daju_dangle: 0.478,
+  daju_sleep: 0.471,
+  daju_tired: 0.493,
+  daju_drowsy: 0.487,
+  daju_crouch: 0.494,
+  daju_slack: 0.468,
+  daju_caught: 0.489,
+  daju_scared: 0.49,
+  daju_cry: 0.498,
+  daju_coffee: 0.49,
+  daju_dizzy: 0.492,
+  daju_peek: 0.515,
+  daju_overheat: 0.493,
+  daju_overheat_b: 0.493,
+  daju_bonk_a: 0.437,
+  daju_bonk_mid: 0.437,
+  daju_bonk_b: 0.437,
+  daju_walk_a: 0.55,
+  daju_walk_b: 0.55,
+  daju_walk_c: 0.55,
+  daju_walk_d: 0.55,
+  daju_work_a: 0.493,
+  daju_work_b: 0.493,
+  daju_work_c: 0.493,
+  daju_work_d: 0.493,
+  daju_music_a: 0.491,
+  daju_music_b: 0.491,
+  daju_music_c: 0.491,
+  daju_music_d: 0.491,
+  daju_eat_a: 0.492,
+  daju_eat_b: 0.492,
+  daju_eat_c: 0.492,
+  daju_eat_d: 0.492,
+
+  // bailong (39 sprites — measured by @art-bailong #40)
+  bailong: 0.49,
+  bailong_blink: 0.49,
+  bailong_idle_b: 0.49,
+  bailong_sit_trans: 0.486,
+  bailong_pat: 0.49,
+  bailong_happy: 0.489,
+  bailong_dangle: 0.462,
+  bailong_sleep: 0.525,
+  bailong_tired: 0.475,
+  bailong_drowsy: 0.488,
+  bailong_crouch: 0.453,
+  bailong_slack: 0.503,
+  bailong_caught: 0.487,
+  bailong_scared: 0.492,
+  bailong_cry: 0.495,
+  bailong_coffee: 0.491,
+  bailong_dizzy: 0.491,
+  bailong_peek: 0.605,
+  bailong_overheat: 0.475,
+  bailong_overheat_b: 0.475,
+  bailong_bonk_a: 0.529,
+  bailong_bonk_mid: 0.529,
+  bailong_bonk_b: 0.529,
+  bailong_walk_a: 0.615,
+  bailong_walk_b: 0.615,
+  bailong_walk_c: 0.615,
+  bailong_walk_d: 0.615,
+  bailong_work_a: 0.46,
+  bailong_work_b: 0.46,
+  bailong_work_c: 0.46,
+  bailong_work_d: 0.46,
+  bailong_music_a: 0.447,
+  bailong_music_b: 0.447,
+  bailong_music_c: 0.447,
+  bailong_music_d: 0.447,
+  bailong_eat_a: 0.47,
+  bailong_eat_b: 0.47,
+  bailong_eat_c: 0.47,
+  bailong_eat_d: 0.47,
+
+  // xingmao (39 sprites — measured by @art-xingmao #38)
+  xingmao: 0.395,
+  xingmao_blink: 0.395,
+  xingmao_idle_b: 0.395,
+  xingmao_sit_trans: 0.401,
+  xingmao_pat: 0.54,
+  xingmao_happy: 0.399,
+  xingmao_dangle: 0.478,
+  xingmao_sleep: 0.454,
+  xingmao_tired: 0.46,
+  xingmao_drowsy: 0.476,
+  xingmao_crouch: 0.399,
+  xingmao_slack: 0.401,
+  xingmao_caught: 0.442,
+  xingmao_scared: 0.392,
+  xingmao_cry: 0.483,
+  xingmao_coffee: 0.4,
+  xingmao_dizzy: 0.431,
+  xingmao_peek: 0.684,
+  xingmao_overheat: 0.46,
+  xingmao_overheat_b: 0.46,
+  xingmao_bonk_a: 0.495,
+  xingmao_bonk_mid: 0.485,
+  xingmao_bonk_b: 0.478,
+  xingmao_walk_a: 0.627,
+  xingmao_walk_b: 0.627,
+  xingmao_walk_c: 0.627,
+  xingmao_walk_d: 0.627,
+  xingmao_work_a: 0.46,
+  xingmao_work_b: 0.46,
+  xingmao_work_c: 0.46,
+  xingmao_work_d: 0.46,
+  xingmao_music_a: 0.389,
+  xingmao_music_b: 0.389,
+  xingmao_music_c: 0.389,
+  xingmao_music_d: 0.389,
+  xingmao_eat_a: 0.424,
+  xingmao_eat_b: 0.424,
+  xingmao_eat_c: 0.424,
+  xingmao_eat_d: 0.424,
+
+  // grok (39 sprites — measured by @art-grok #39)
+  grok: 0.492,
+  grok_blink: 0.492,
+  grok_idle_b: 0.492,
+  grok_sit_trans: 0.491,
+  grok_pat: 0.492,
+  grok_happy: 0.494,
+  grok_dangle: 0.446,
+  grok_sleep: 0.497,
+  grok_tired: 0.495,
+  grok_drowsy: 0.502,
+  grok_crouch: 0.491,
+  grok_slack: 0.484,
+  grok_caught: 0.48,
+  grok_scared: 0.489,
+  grok_cry: 0.486,
+  grok_coffee: 0.486,
+  grok_dizzy: 0.483,
+  grok_peek: 0.565,
+  grok_overheat: 0.495,
+  grok_overheat_b: 0.495,
+  grok_bonk_a: 0.524,
+  grok_bonk_mid: 0.524,
+  grok_bonk_b: 0.524,
+  grok_walk_a: 0.529,
+  grok_walk_b: 0.529,
+  grok_walk_c: 0.529,
+  grok_walk_d: 0.529,
+  grok_work_a: 0.495,
+  grok_work_b: 0.495,
+  grok_work_c: 0.495,
+  grok_work_d: 0.495,
+  grok_music_a: 0.476,
+  grok_music_b: 0.476,
+  grok_music_c: 0.476,
+  grok_music_d: 0.476,
+  grok_eat_a: 0.492,
+  grok_eat_b: 0.492,
+  grok_eat_c: 0.492,
+  grok_eat_d: 0.492,
+};
+
 export function getSpriteAnchorX(spriteKey: string): number {
-  const val = DAFEIYU_ANCHOR_X[spriteKey];
+  const val = SPRITE_ANCHOR_X[spriteKey];
   return typeof val === 'number' && Number.isFinite(val) ? val : 0.5;
 }
 
@@ -315,17 +487,79 @@ const IDLE_VARIANT_GAP_MAX_MS = 9000;
 const IDLE_VARIANT_HOLD_MIN_MS = 1600;
 const IDLE_VARIANT_HOLD_MAX_MS = 2400;
 
-const FUN_LINES = {
-  coffee: '冰美式续命！今天的我元气 1.4 倍速！',
-  bugScared: '呀啊啊！有 Bug！！别过来！',
-  bugSwat: '尾巴拍飞！啪——！',
-  bonk: '吃我一记大肥鱼重锤！啪叽！！',
-  dizzy: '呜哇＠_＠…脑子里的 Token 摇匀了…',
-  music: '戴上小鲸鱼耳机，跟着节拍晃脑袋～♪',
-  drowsy: '呼啊…有点犯困了…',
-  cry: '呜哇啊——我的饭碗塔！！',
-  peek: '外面…有什么好吃的吗？👀',
-} as const;
+export interface FunLines {
+  coffee: string;
+  bugScared: string;
+  bugSwat: string;
+  bonk: string;
+  dizzy: string;
+  music: string;
+  drowsy: string;
+  cry: string;
+  peek: string;
+}
+
+export const CHAR_FUN_LINES: Record<PetCharId, FunLines> = {
+  dafeiyu: {
+    coffee: '冰美式续命！今天的我元气 1.4 倍速！',
+    bugScared: '呀啊啊！有 Bug！！别过来！',
+    bugSwat: '尾巴拍飞！啪——！',
+    bonk: '吃我一记大肥鱼重锤！啪叽！！',
+    dizzy: '呜哇＠_＠…脑子里的 Token 摇匀了…',
+    music: '戴上小鲸鱼耳机，跟着节拍晃脑袋～♪',
+    drowsy: '呼啊…有点犯困了…',
+    cry: '呜哇啊——我的饭碗塔！！',
+    peek: '外面…有什么好吃的吗？👀',
+  },
+  daju: {
+    coffee: '冰美式到位！代码审阅优雅 1.4 倍速～',
+    bugScared: '呀！发现未捕获的边界 Bug！！',
+    bugSwat: '橘色重章拍扁！啪——！',
+    bonk: '吃我一记 Co-authored-by 盖章重锤！啪叽！！',
+    dizzy: '呜哇＠_＠…上下文窗口转晕啦…',
+    music: '戴上橘子耳机，边写优雅代码边摇摆～♪',
+    drowsy: '呼啊…架构复盘到有点犯困了…',
+    cry: '呜哇啊——我摆得整整齐齐的碗塔！！',
+    peek: '外面…有需要优雅重构的代码吗？👀',
+  },
+  bailong: {
+    coffee: '冰美式注入！思维链吞吐 1.4 倍速！',
+    bugScared: '唔！出现逻辑异常 Bug！！别靠近本龙！',
+    bugSwat: '龙尾横扫！啪——！',
+    bonk: '思维链水晶重锤！逻辑制裁！！',
+    dizzy: '唔＠_＠…推理树转成螺旋线了…',
+    music: '白龙耳机降噪中，思路丝滑起飞～♪',
+    drowsy: '呼啊…深度推演后有点困倦…',
+    cry: '呜哇——本龙的饭碗塔塌了！！',
+    peek: '外面…有值得推演的难题吗？👀',
+  },
+  xingmao: {
+    coffee: '冰美式续命喵！跑分冲刺 1.4 倍速喵！',
+    bugScared: '喵哇啊啊！有 Bug 虫子！！别过来喵！',
+    bugSwat: '猫尾一甩拍飞喵！啪——！',
+    bonk: '吃我一记星猫流星锤喵！啪叽！！',
+    dizzy: '喵哇＠_＠…眼里星星转圈圈了喵…',
+    music: '戴上星猫耳耳机，全榜第一摇摆喵～♪',
+    drowsy: '呼噜…猫猫眼皮在打架了喵…',
+    cry: '喵哇啊——我的饭碗塔倒了喵！！',
+    peek: '外面…有小鱼干和鲷鱼烧吗喵？👀',
+  },
+  grok: {
+    coffee: '冰美式满上！火力飙到 1.4 倍速！',
+    bugScared: '喂哇！哪冒出来的 Bug！！看我不劈了你！',
+    bugSwat: '战斧顺手拍飞！啪——！',
+    bonk: '吃我一记战斧重劈！Bug 粉碎！！',
+    dizzy: '喂＠_＠…别晃了！视野全花啦…',
+    music: '黑红蝙蝠耳机拉满！跟着节拍躁起来～♪',
+    drowsy: '哈啊…稍微打个盹再接着干…',
+    cry: '呜哇啊——谁碰倒本小姐的饭碗塔了！！',
+    peek: '外面…有藏起来的 Bug 吗？👀',
+  },
+};
+
+export function getFunLines(charId: PetCharId): FunLines {
+  return CHAR_FUN_LINES[charId] ?? CHAR_FUN_LINES.dafeiyu;
+}
 
 interface FallingItem {
   active: boolean;
@@ -1641,7 +1875,7 @@ export async function mountPet(
       setMood('eat', meta.eatLine, 3000);
     } else if (action === 'music') {
       playSfx('pat');
-      setMood('music', FUN_LINES.music, 6500);
+      setMood('music', getFunLines(currentChar).music, 6500);
     } else if (action === 'sleep') {
       enterSleep(now);
     }
@@ -1703,7 +1937,7 @@ export async function mountPet(
       }
     }
     if (peeking && !bubbleText) {
-      showBubble(FUN_LINES.peek, PEEK_BUBBLE_MS);
+      showBubble(getFunLines(currentChar).peek, PEEK_BUBBLE_MS);
     }
   };
 
@@ -1764,7 +1998,7 @@ export async function mountPet(
     }
     towerCount = 0;
     playSfx('land');
-    setMood('cry', FUN_LINES.cry, 2500);
+    setMood('cry', getFunLines(currentChar).cry, 2500);
     emit({ type: 'tower-collapse' });
   };
 
@@ -2298,7 +2532,7 @@ export async function mountPet(
       pendingBowlFlies++;
     } else if (kind === 'coffee') {
       playSfx('eat');
-      setMood('coffee', FUN_LINES.coffee, 1600);
+      setMood('coffee', getFunLines(currentChar).coffee, 1600);
       boostUntil = now + 1600 + COFFEE_BOOST_MS;
       emit({ type: 'coffee-boost', until: boostUntil });
     }
@@ -2348,7 +2582,7 @@ export async function mountPet(
     bugHuntUntil = now + BONK_SLAM_MS;
     currentMood = 'bonk';
     moodRevertAt = bugHuntUntil;
-    showBubble(FUN_LINES.bonk, 1600, now);
+    showBubble(getFunLines(currentChar).bonk, 1600, now);
 
     let hitAny = false;
     for (const d of dropSlots) {
@@ -2407,7 +2641,7 @@ export async function mountPet(
             d.rot = 0;
             d.t = 0;
             playSfx('bug');
-            setMood('scared', FUN_LINES.bugScared, 720);
+            setMood('scared', getFunLines(currentChar).bugScared, 720);
             bugHuntSlot = d;
             bugHuntPhase = 'scared';
             bugHuntUntil = now + (boostUntil > now ? 500 : 700);
@@ -2859,7 +3093,7 @@ export async function mountPet(
         pushParticle(particles, 'dust', cxLand + 14, footLandY - 2, 26, -8, 0.44, 6.2, '#f8fafc');
         if (wasDizzy) {
           playSfx('dizzy');
-          setMood('dizzy', FUN_LINES.dizzy, DIZZY_DURATION_MS);
+          setMood('dizzy', getFunLines(currentChar).dizzy, DIZZY_DURATION_MS);
         } else {
           squashSpring.impulse(1.8);
           currentMood = baseMood;

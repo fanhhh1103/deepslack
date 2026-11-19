@@ -21,14 +21,20 @@ import {
   buildDraftOverlayHtml,
 } from './overlays';
 import { buildReportModalHtml, buildShareText } from './reportCard';
+import { CHAR_FISH_LINES, FISH_LINES, FishDirector, getFishLines } from '../pet/fishDirector';
+import { RATE_TIERS, SLACK_AFTER_MS } from '../pet/fishBrain';
 import { drawBonkShockwave, drawOverheatGlow } from '../pet/fishFx';
 import { analyzeMotionTrack } from '../pet/motionAudit';
 import { playSfx, type SfxName } from '../pet/petAudio';
 import {
+  CHAR_FUN_LINES,
   DAFEIYU_ANCHOR_X,
+  getFunLines,
   getSpriteAnchorX,
   mountPet,
+  SPRITE_ANCHOR_X,
   type PetCharId,
+  type PetController,
   type PetMood,
   type PetMotionTelemetry,
 } from '../pet/petRenderer';
@@ -621,19 +627,23 @@ describe('Pet multi-action renderer & procedural SFX', () => {
       const countAfterSecondSwitch = requestedUrls.filter((u) => u.endsWith('/daju_work_a.png')).length;
       expect(countAfterSecondSwitch).toBe(countBeforeSecondSwitch);
 
-      // 验证大橘、星猫动作帧命中各自贴图
+      // 验证大橘、星猫动作帧命中各自贴图（含 sit_trans 过渡到 work，以及缺帧平滑回退）
       let tick = performance.now();
+      const stepFrames = (totalMs: number, dtMs = 40) => {
+        for (let t = 0; t < totalMs; t += dtMs) {
+          tick += dtMs;
+          rafHolder.cb?.(tick);
+        }
+      };
       pet.setCharacter('daju');
       pet.triggerAction('work');
-      tick += 50;
-      rafHolder.cb?.(tick);
+      stepFrames(440);
       expect(drawnUrls.some((u) => u.endsWith('/daju_work_a.png') || u.endsWith('/daju_work_b.png'))).toBe(true);
 
       pet.setCharacter('xingmao');
       await flushMicrotasks();
       pet.triggerAction('pat');
-      tick += 50;
-      rafHolder.cb?.(tick);
+      stepFrames(440);
       expect(drawnUrls.some((u) => u.endsWith('/xingmao_pat.png'))).toBe(true);
 
       // 验证缺帧时（grok_sleep）平滑回退到 grok.png 基础图
@@ -641,8 +651,7 @@ describe('Pet multi-action renderer & procedural SFX', () => {
       pet.setCharacter('grok');
       await flushMicrotasks();
       pet.triggerAction('sleep');
-      tick += 50;
-      rafHolder.cb?.(tick);
+      stepFrames(440);
       expect(drawnUrls.some((u) => u.endsWith('/grok.png'))).toBe(true);
 
       pet.destroy();
@@ -838,10 +847,12 @@ describe('Pet multi-action renderer & procedural SFX', () => {
     const origCancelRaf = globalThis.cancelAnimationFrame;
     const origImage = globalThis.Image;
     const origPerfNow = performance.now.bind(performance);
+    const origRandom = Math.random;
 
     const rafHolder: { cb: FrameRequestCallback | null } = { cb: null };
     let simNow = 10_000;
     performance.now = () => simNow;
+    Math.random = () => 0.35;
 
     class SizedMockImage {
       private _src = '';
@@ -1006,6 +1017,7 @@ describe('Pet multi-action renderer & procedural SFX', () => {
 
       pet.destroy();
     } finally {
+      Math.random = origRandom;
       performance.now = origPerfNow;
       globalThis.document = origDocument;
       globalThis.requestAnimationFrame = origRaf;
@@ -1114,7 +1126,8 @@ describe('Pet multi-action renderer & procedural SFX', () => {
 
       // Anchor lookup checks
       expect(getSpriteAnchorX('dafeiyu_slack')).toBe(DAFEIYU_ANCHOR_X.dafeiyu_slack);
-      expect(getSpriteAnchorX('daju_work_a')).toBe(0.5);
+      expect(getSpriteAnchorX('daju_work_a')).toBe(SPRITE_ANCHOR_X.daju_work_a);
+      expect(getSpriteAnchorX('unknown_sprite_key')).toBe(0.5);
 
       const pet = await mountPet(makeFakeCanvas(true), './assets');
       await flushMicrotasks();
@@ -1240,18 +1253,20 @@ describe('Pet multi-action renderer & procedural SFX', () => {
       expect(pet.getMood()).toBe('idle');
       expect(drawnCalls.some((c) => c.src.endsWith('/dafeiyu_idle_b.png'))).toBe(true);
 
-      // 9. Other characters (daju) stay on 2-frame packs & gracefully fall back at T3
+      // 9. Other characters (daju) now unlock full 39-sprite packs including 4-frame walk/work/music/eat & T3 overheat_b
       pet.setCharacter('daju');
       await flushMicrotasks();
-      expect(requestedUrls).not.toContain('./assets/pet/daju_walk_c.png');
-      expect(requestedUrls).not.toContain('./assets/pet/daju_overheat_b.png');
+      expect(requestedUrls).toContain('./assets/pet/daju_walk_c.png');
+      expect(requestedUrls).toContain('./assets/pet/daju_overheat_b.png');
+      expect(requestedUrls).toContain('./assets/pet/daju_bonk_mid.png');
+      expect(requestedUrls).toContain('./assets/pet/daju_sit_trans.png');
+      expect(requestedUrls).toContain('./assets/pet/daju_idle_b.png');
       pet.setRateTier(3, 4800);
       pet.setBaseMood('work');
       drawnCalls.length = 0;
       run(600, 25);
-      expect(
-        drawnCalls.some((c) => c.src.endsWith('/daju_work_a.png') || c.src.endsWith('/daju_work_b.png')),
-      ).toBe(true);
+      expect(drawnCalls.some((c) => c.src.endsWith('/daju_overheat.png'))).toBe(true);
+      expect(drawnCalls.some((c) => c.src.endsWith('/daju_overheat_b.png'))).toBe(true);
 
       // 10. Regression for live 60FPS `03_walk_turn_peek`: walk_d -> peek within 33.3ms holds >= 48ms with zero violations
       pet.setCharacter('dafeiyu');
@@ -1294,6 +1309,362 @@ describe('Pet multi-action renderer & procedural SFX', () => {
       globalThis.requestAnimationFrame = origRaf;
       globalThis.cancelAnimationFrame = origCancelRaf;
       globalThis.Image = origImage;
+    }
+  });
+
+  it('unlocks full 39-sprite packs, SPRITE_ANCHOR_X, CHAR_FUN_LINES, and character-aware FishDirector lines for all 5 AI girls', async () => {
+    const ALL_ROSTER: PetCharId[] = ['dafeiyu', 'daju', 'bailong', 'xingmao', 'grok'];
+    const ALL_39_SUFFIXES = [
+      '',
+      '_blink',
+      '_idle_b',
+      '_sit_trans',
+      '_pat',
+      '_happy',
+      '_dangle',
+      '_sleep',
+      '_tired',
+      '_drowsy',
+      '_crouch',
+      '_slack',
+      '_caught',
+      '_scared',
+      '_cry',
+      '_coffee',
+      '_dizzy',
+      '_peek',
+      '_overheat',
+      '_overheat_b',
+      '_bonk_a',
+      '_bonk_mid',
+      '_bonk_b',
+      '_walk_a',
+      '_walk_b',
+      '_walk_c',
+      '_walk_d',
+      '_work_a',
+      '_work_b',
+      '_work_c',
+      '_work_d',
+      '_music_a',
+      '_music_b',
+      '_music_c',
+      '_music_d',
+      '_eat_a',
+      '_eat_b',
+      '_eat_c',
+      '_eat_d',
+    ];
+
+    // 1. SPRITE_ANCHOR_X covers all 195 sprites (39 × 5) and preserves DAFEIYU_ANCHOR_X parity
+    expect(Object.keys(DAFEIYU_ANCHOR_X)).toHaveLength(39);
+    expect(Object.keys(SPRITE_ANCHOR_X)).toHaveLength(195);
+    for (const ch of ALL_ROSTER) {
+      for (const sfx of ALL_39_SUFFIXES) {
+        const key = `${ch}${sfx}`;
+        const val = SPRITE_ANCHOR_X[key];
+        expect(typeof val).toBe('number');
+        expect(Number.isFinite(val)).toBe(true);
+        expect(val).toBeGreaterThan(0.1);
+        expect(val).toBeLessThan(0.9);
+        expect(getSpriteAnchorX(key)).toBe(val);
+      }
+    }
+    for (const [k, v] of Object.entries(DAFEIYU_ANCHOR_X)) {
+      expect(SPRITE_ANCHOR_X[k]).toBe(v);
+    }
+    expect(getSpriteAnchorX('nonexistent_key')).toBe(0.5);
+
+    // 2. CHAR_FUN_LINES & CHAR_FISH_LINES give every AI girl her own in-character voice while preserving dafeiyu
+    expect(CHAR_FUN_LINES.dafeiyu.bonk).toBe('吃我一记大肥鱼重锤！啪叽！！');
+    expect(CHAR_FUN_LINES.dafeiyu.music).toBe('戴上小鲸鱼耳机，跟着节拍晃脑袋～♪');
+    expect(CHAR_FISH_LINES.dafeiyu).toEqual(FISH_LINES);
+    const uniqueBonks = new Set(ALL_ROSTER.map((c) => getFunLines(c).bonk));
+    const uniqueMusics = new Set(ALL_ROSTER.map((c) => getFunLines(c).music));
+    const uniqueOverheats = new Set(ALL_ROSTER.map((c) => getFishLines(c).overheat));
+    const uniqueCaughts = new Set(ALL_ROSTER.map((c) => getFishLines(c).caught));
+    expect(uniqueBonks.size).toBe(5);
+    expect(uniqueMusics.size).toBe(5);
+    expect(uniqueOverheats.size).toBe(5);
+    expect(uniqueCaughts.size).toBe(5);
+    for (const ch of ALL_ROSTER.filter((c) => c !== 'dafeiyu')) {
+      const fl = getFunLines(ch);
+      for (const line of Object.values(fl)) {
+        expect(line.trim().length).toBeGreaterThan(0);
+        expect(line).not.toContain('大肥鱼');
+        expect(line).not.toContain('小鲸鱼');
+      }
+    }
+
+    // 3. Lazy-load full 39-sprite packs on switch, render 4-frame cycles + bonk_mid + sit_trans + idle_b, and emit per-character bubbles
+    const noop = () => {};
+    const requestedUrls: string[] = [];
+    const drawnUrls: string[] = [];
+    const drawnTexts: string[] = [];
+
+    const ctxProxy = new Proxy(
+      {},
+      {
+        get: (_t, prop) => {
+          if (prop === 'measureText') return (t: string) => ({ width: t.length * 8 });
+          if (prop === 'drawImage') {
+            return (img: { src?: string }) => {
+              if (img?.src) drawnUrls.push(img.src);
+            };
+          }
+          if (prop === 'fillText') {
+            return (text: string) => {
+              drawnTexts.push(text);
+            };
+          }
+          return noop;
+        },
+        set: () => true,
+      },
+    ) as unknown as CanvasRenderingContext2D;
+
+    const makeFakeCanvas = () =>
+      ({
+        width: 256,
+        height: 234,
+        clientWidth: 256,
+        clientHeight: 234,
+        getContext: () => ctxProxy,
+        getBoundingClientRect: () => ({ left: 0, top: 0, right: 256, bottom: 234, width: 256, height: 234 }),
+        addEventListener: noop,
+        removeEventListener: noop,
+      }) as unknown as HTMLCanvasElement;
+
+    const origDocument = globalThis.document;
+    const origRaf = globalThis.requestAnimationFrame;
+    const origCancelRaf = globalThis.cancelAnimationFrame;
+    const origImage = globalThis.Image;
+    const origPerfNow = performance.now.bind(performance);
+    const origRandom = Math.random;
+
+    const rafHolder: { cb: FrameRequestCallback | null } = { cb: null };
+    let simNow = 60_000;
+    performance.now = () => simNow;
+    Math.random = () => 0.35;
+
+    class RosterMockImage {
+      private _src = '';
+      naturalWidth = 540;
+      naturalHeight = 712;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      get src(): string {
+        return this._src;
+      }
+      set src(val: string) {
+        this._src = val;
+        requestedUrls.push(val);
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+
+    globalThis.document = {
+      hidden: false,
+      createElement: () => makeFakeCanvas(),
+      querySelector: () => null,
+    } as unknown as Document;
+    globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+      rafHolder.cb = cb;
+      return 1;
+    }) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = noop as typeof cancelAnimationFrame;
+    globalThis.Image = RosterMockImage as unknown as typeof Image;
+
+    const flushMicrotasks = () => new Promise<void>((r) => globalThis.setTimeout(r, 0));
+
+    try {
+      const pet = await mountPet(makeFakeCanvas(), './assets');
+      await flushMicrotasks();
+
+      const step = (ms: number) => {
+        simNow += ms;
+        rafHolder.cb?.(simNow);
+      };
+      const run = (totalMs: number, dtMs = 25) => {
+        for (let t = 0; t < totalMs; t += dtMs) step(dtMs);
+      };
+
+      // Initial mount stays lazy for the 4 non-default characters (base portraits only, no 38-sprite pack yet)
+      for (const ch of ['daju', 'bailong', 'xingmao', 'grok'] as PetCharId[]) {
+        expect(requestedUrls).toContain(`./assets/pet/${ch}.png`);
+        expect(requestedUrls).not.toContain(`./assets/pet/${ch}_walk_a.png`);
+        expect(requestedUrls).not.toContain(`./assets/pet/${ch}_music_a.png`);
+        expect(requestedUrls).not.toContain(`./assets/pet/${ch}_overheat_b.png`);
+      }
+
+      // Switching to each of daju, bailong, xingmao, grok lazy-loads all 39 sprites & drives full cycles + character lines
+      for (const ch of ['daju', 'bailong', 'xingmao', 'grok'] as PetCharId[]) {
+        pet.setCharacter(ch);
+        await flushMicrotasks();
+
+        for (const sfx of [
+          'walk_a',
+          'walk_b',
+          'walk_c',
+          'walk_d',
+          'work_c',
+          'work_d',
+          'music_a',
+          'music_b',
+          'music_c',
+          'music_d',
+          'eat_c',
+          'eat_d',
+          'overheat',
+          'overheat_b',
+          'tired',
+          'slack',
+          'caught',
+          'peek',
+          'scared',
+          'bonk_a',
+          'bonk_mid',
+          'bonk_b',
+          'dizzy',
+          'coffee',
+          'cry',
+          'drowsy',
+          'crouch',
+          'sit_trans',
+          'idle_b',
+        ]) {
+          expect(requestedUrls).toContain(`./assets/pet/${ch}_${sfx}.png`);
+        }
+
+        // Verify 4-frame walk_a..d
+        pet.setRateTier(0, 0);
+        pet.setBaseMood('idle');
+        pet.setMood('idle');
+        pet.setLocomotion(1, false, 1);
+        drawnUrls.length = 0;
+        run(1300, 25);
+        for (const sfx of ['walk_a', 'walk_b', 'walk_c', 'walk_d']) {
+          expect(drawnUrls.some((u) => u.endsWith(`/${ch}_${sfx}.png`))).toBe(true);
+        }
+        pet.setLocomotion(0);
+        run(300, 25);
+
+        // Verify 4-frame music_a..d + sit_trans + character-specific music bubble
+        drawnUrls.length = 0;
+        drawnTexts.length = 0;
+        pet.triggerAction('music');
+        run(3800, 35);
+        expect(drawnUrls.some((u) => u.endsWith(`/${ch}_sit_trans.png`))).toBe(true);
+        for (const sfx of ['music_a', 'music_b', 'music_c', 'music_d']) {
+          expect(drawnUrls.some((u) => u.endsWith(`/${ch}_${sfx}.png`))).toBe(true);
+        }
+        const renderedBubble = drawnTexts.join('');
+        expect(renderedBubble).toContain(CHAR_FUN_LINES[ch].music.slice(0, 6));
+
+        // Verify 4-frame eat_a..d
+        pet.setMood('eat', '', 1900);
+        drawnUrls.length = 0;
+        run(1900, 30);
+        for (const sfx of ['eat_a', 'eat_b', 'eat_c', 'eat_d']) {
+          expect(drawnUrls.some((u) => u.endsWith(`/${ch}_${sfx}.png`))).toBe(true);
+        }
+
+        // Verify 4-frame work_a..d + T3 overheat/overheat_b
+        run(60, 30); // let timed eat finish reverting to idle before entering base work
+        pet.setRateTier(2, 1600);
+        pet.setBaseMood('work');
+        drawnUrls.length = 0;
+        run(1400, 25);
+        for (const sfx of ['work_a', 'work_b', 'work_c', 'work_d']) {
+          expect(drawnUrls.some((u) => u.endsWith(`/${ch}_${sfx}.png`))).toBe(true);
+        }
+        pet.setRateTier(3, 4800);
+        drawnUrls.length = 0;
+        run(700, 25);
+        expect(drawnUrls.some((u) => u.endsWith(`/${ch}_overheat.png`))).toBe(true);
+        expect(drawnUrls.some((u) => u.endsWith(`/${ch}_overheat_b.png`))).toBe(true);
+
+        // Verify 3-stage bonk_a -> bonk_mid -> bonk_b + character-specific bonk bubble
+        pet.setRateTier(0, 0);
+        pet.setBaseMood('idle');
+        pet.setMood('idle');
+        run(300, 25);
+        drawnUrls.length = 0;
+        drawnTexts.length = 0;
+        expect(pet.dropItem('bug', 'toy')).toBe(true);
+        run(2800, 16);
+        expect(drawnUrls.some((u) => u.endsWith(`/${ch}_bonk_a.png`))).toBe(true);
+        expect(drawnUrls.some((u) => u.endsWith(`/${ch}_bonk_mid.png`))).toBe(true);
+        expect(drawnUrls.some((u) => u.endsWith(`/${ch}_bonk_b.png`))).toBe(true);
+        expect(drawnTexts.join('')).toContain(CHAR_FUN_LINES[ch].bonk.slice(0, 6));
+
+        // Verify idle_b micro-life
+        pet.setMood('idle');
+        drawnUrls.length = 0;
+        run(9600, 50);
+        expect(drawnUrls.some((u) => u.endsWith(`/${ch}_idle_b.png`))).toBe(true);
+      }
+
+      pet.destroy();
+    } finally {
+      Math.random = origRandom;
+      performance.now = origPerfNow;
+      globalThis.document = origDocument;
+      globalThis.requestAnimationFrame = origRaf;
+      globalThis.cancelAnimationFrame = origCancelRaf;
+      globalThis.Image = origImage;
+    }
+
+    // 4. FishDirector emits character-aware overheat / tired / caught lines via pet.getCharacter()
+    for (const ch of ALL_ROSTER) {
+      const moodCalls: Array<{ mood: PetMood; text?: string }> = [];
+      let curMood: PetMood = 'idle';
+      const fakePet = {
+        getCharacter: () => ch,
+        setMood: (m: PetMood, text?: string) => {
+          curMood = m;
+          moodCalls.push({ mood: m, text });
+        },
+        getMood: () => curMood,
+        setRateTier: noop,
+        setBaseMood: (m: PetMood) => {
+          curMood = m;
+        },
+        playFakeTyping: noop,
+        setLocomotion: noop,
+        setBowlCount: noop,
+        dropItem: () => true,
+        getBoostRemainingMs: () => 0,
+        isBusy: () => false,
+        onEvent: () => noop,
+      } as unknown as PetController;
+
+      const dir = new FishDirector({ storage: null, now: 0, today: () => '2026-11-19' });
+      dir.attachPet(fakePet);
+
+      // Caught line
+      dir.tick(SLACK_AFTER_MS);
+      expect(dir.handleHover(SLACK_AFTER_MS + 10)).toBe(true);
+      expect(moodCalls.some((c) => c.mood === 'caught' && c.text === CHAR_FISH_LINES[ch].caught)).toBe(true);
+
+      // Overheat + tired lines via real brain transitions
+      let t = SLACK_AFTER_MS + 1000;
+      for (let i = 0; i < 14; i++) {
+        t += 1500;
+        dir.handleRateSample({ tokensPerSec: RATE_TIERS[3].enter * 2, freshTokensPerSec: RATE_TIERS[3].enter * 2 }, t);
+      }
+      expect(moodCalls.some((c) => c.mood === 'overheat' && c.text === CHAR_FISH_LINES[ch].overheat)).toBe(true);
+
+      for (let i = 0; i < 20 && dir.tier !== 0; i++) {
+        t += 1500;
+        dir.handleRateSample({ tokensPerSec: 0, freshTokensPerSec: 0 }, t);
+      }
+      expect(moodCalls.some((c) => c.mood === 'tired' && c.text === CHAR_FISH_LINES[ch].tired)).toBe(true);
+
+      // Preview T3 also uses character-aware overheat line
+      moodCalls.length = 0;
+      dir.previewRate(RATE_TIERS[3].enter * 2, t + 1000);
+      expect(moodCalls.some((c) => c.mood === 'overheat' && c.text === CHAR_FISH_LINES[ch].overheat)).toBe(true);
     }
   });
 });
