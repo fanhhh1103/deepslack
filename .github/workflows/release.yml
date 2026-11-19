@@ -48,8 +48,8 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Typecheck & run frontend tests
-        run: npm run typecheck && npm test
+      - name: Typecheck, test & build frontend
+        run: npm run typecheck && npm test && npm run build
 
       - name: Run Rust tests
         if: matrix.target != 'x86_64-apple-darwin'
