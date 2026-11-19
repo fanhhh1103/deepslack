@@ -17,13 +17,13 @@ jobs:
         include:
           - platform: macos-latest
             target: aarch64-apple-darwin
-            args: --target aarch64-apple-darwin
+            args: --target aarch64-apple-darwin --bundles dmg
           - platform: macos-latest
             target: x86_64-apple-darwin
-            args: --target x86_64-apple-darwin
+            args: --target x86_64-apple-darwin --bundles dmg
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-            args: ''
+            args: --bundles nsis,msi
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
@@ -69,20 +69,24 @@ jobs:
           releaseBody: |
             ## 🐳 DeepSlack v__VERSION__ · 深度摸鱼（烧币版）
 
-            **Privacy-first anime desktop pet powered by your daily Claude Code / Codex / Antigravity token burn.**
+            **Turn your daily Claude Code / Codex / Antigravity token burn into a living anime desktop pet (macOS & Windows).**
 
-            ### 📦 Downloads / 安装包选择
-            - **macOS (Apple Silicon M1/M2/M3/M4)**: `*aarch64.dmg`
-            - **macOS (Intel)**: `*x64.dmg`
-            - **Windows 10/11 (x64)**: `*x64-setup.exe` (推荐，用户级免管理员安装) or `*x64_en-US.msi`
-            - **🌐 3-Second Web Demo / 网页免安装试玩**: https://fanhhh1103.github.io/deepslack/
+            ### ⬇️ Direct Downloads / 一键直链下载
+            | Platform / 平台 | Direct Download / 直链下载 | Notes / 说明 |
+            | :--- | :--- | :--- |
+            | **macOS (Apple Silicon M1–M4)** | **[DeepSlack___VERSION___aarch64.dmg](https://github.com/fanhhh1103/deepslack/releases/download/v__VERSION__/DeepSlack___VERSION___aarch64.dmg)** | Recommended for M-series Macs / M 系列芯片首选 |
+            | **macOS (Intel)** | **[DeepSlack___VERSION___x64.dmg](https://github.com/fanhhh1103/deepslack/releases/download/v__VERSION__/DeepSlack___VERSION___x64.dmg)** | For Intel Macs / Intel 芯片 Mac |
+            | **Windows 10/11 (x64 · Recommended)** | **[DeepSlack___VERSION___x64-setup.exe](https://github.com/fanhhh1103/deepslack/releases/download/v__VERSION__/DeepSlack___VERSION___x64-setup.exe)** | Per-user installer, no admin UAC required / 推荐，免管理员安装 |
+            | **Windows 10/11 (x64 · MSI)** | **[DeepSlack___VERSION___x64_en-US.msi](https://github.com/fanhhh1103/deepslack/releases/download/v__VERSION__/DeepSlack___VERSION___x64_en-US.msi)** | Standard Windows MSI package / 标准 MSI 安装包 |
+
+            - **🌐 3-Second Web Demo / 网页 3 秒免安装试玩**: https://fanhhh1103.github.io/deepslack/
 
             ### 💡 First Launch Notice (Unsigned Builds / 首次打开提示)
-            - **macOS**: If macOS says the app is damaged or from an unidentified developer, drag `DeepSlack.app` to Applications and run:
+            - **macOS**: If macOS says the app is damaged or from an unidentified developer, drag `DeepSlack.app` to Applications and run once:
               ```bash
               xattr -cr /Applications/DeepSlack.app
               ```
-            - **Windows**: Click **"More info" → "Run anyway"** if Windows SmartScreen prompts on first launch.
+            - **Windows**: Click **"More info" → "Run anyway"**（点击 **「更多信息」→「仍要运行」**）if Windows SmartScreen prompts on first launch.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

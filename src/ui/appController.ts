@@ -44,6 +44,26 @@ import { buildSparkline } from '../pet/fishBrain';
 
 const STORAGE_CHAR_KEY = 'cyber_pet_slot_char_v1';
 const STORAGE_MUTED_KEY = 'cyber_pet_slot_muted_v1';
+const STORAGE_LANG_KEY = 'deepslack_lang_v1';
+
+type DemoLang = 'zh' | 'en';
+
+function detectInitialLang(isTauri: boolean): DemoLang {
+  if (isTauri) return 'zh';
+  const saved = readStorage(STORAGE_LANG_KEY);
+  if (saved === 'zh' || saved === 'en') return saved;
+  if (typeof navigator !== 'undefined' && typeof navigator.language === 'string') {
+    return navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  }
+  return 'zh';
+}
+
+const SIM_RATE_LABELS_EN: Record<string, string> = {
+  zero: '🧊 Idle 0',
+  slow: '🐢 Slow',
+  fast: '🚀 Fast',
+  red: '🔥 Overheat',
+};
 
 /** 浏览器预览里 `.widget-root` 的横向溜达范围（收窄防止胶囊被裁切） */
 const BROWSER_WALK_RANGE: WalkRange = { minX: -92, maxX: 92 };
@@ -123,6 +143,7 @@ export class CyberPetApp {
   private autoPassthrough = false;
   private activeChar: SwitchablePetId;
   private muted: boolean;
+  private lang: DemoLang;
   private todayTokens = 0;
   private byProvider: Partial<Record<ProviderId, number>> = {};
 
@@ -190,6 +211,7 @@ export class CyberPetApp {
     const savedMuted = readStorage(STORAGE_MUTED_KEY) === '1';
     this.muted = savedMuted;
     setMuted(savedMuted);
+    this.lang = detectInitialLang(this.isTauri);
 
     const savedChar = readStorage(STORAGE_CHAR_KEY);
     this.activeChar = isValidPetId(savedChar) ? savedChar : 'dafeiyu';
@@ -321,79 +343,122 @@ export class CyberPetApp {
     document.body.classList.toggle('mode-browser', !this.isTauri);
   }
 
+  private buildHeroHeaderInnerHtml(): string {
+    const isEn = this.lang === 'en';
+    return `
+      <div class="web-hero-title-row">
+        <h1 class="web-hero-title">${isEn ? '🐳 DeepSlack · AI Token Desktop Pet' : '🐳 DeepSlack · 深度摸鱼（烧币版）'}</h1>
+        <div class="web-hero-links">
+          <a
+            class="web-hero-link is-primary"
+            href="https://github.com/fanhhh1103/deepslack/releases/latest"
+            target="_blank"
+            rel="noopener"
+          >${isEn ? '⬇️ macOS / Windows' : '⬇️ 下载 macOS / Windows'}</a>
+          <a
+            class="web-hero-link"
+            href="https://github.com/fanhhh1103/deepslack"
+            target="_blank"
+            rel="noopener"
+          >⭐ GitHub</a>
+          <button
+            type="button"
+            class="web-hero-link"
+            id="btn-lang-toggle"
+            title="${isEn ? '切换为中文界面' : 'Switch to English UI'}"
+          >🌐 ${isEn ? '中文' : 'EN'}</button>
+        </div>
+      </div>
+      <p class="web-hero-subtitle">${
+        isEn
+          ? 'Powered by your daily Claude Code / Codex / Antigravity token burn · Click, drag & toss toys right here!'
+          : '烧真实 AI Token 喂养的赛博电子鸡 · 点桌宠 / 丢玩具 3 秒免安装试玩'
+      }</p>
+    `;
+  }
+
+  private buildSimBarInnerHtml(): string {
+    const isEn = this.lang === 'en';
+    return `
+      <span class="sim-bar-label">${isEn ? '🎮 3s Interactive Demo' : '🎮 3 秒试玩交互'}</span>
+      ${SIM_RATE_BUTTONS.map(
+        (btn) => `
+          <button
+            type="button"
+            class="sim-feed-btn sim-rate-btn"
+            data-sim-rate="${btn.tps}"
+            data-sim-rate-key="${btn.key}"
+            title="${escapeHtml(
+              isEn
+                ? `Simulate ${formatRate(btn.tps)} token burn for 20s`
+                : `模拟实时速率 ${formatRate(btn.tps)}，持续 20 秒`,
+            )}"
+          >${escapeHtml(isEn ? (SIM_RATE_LABELS_EN[btn.key] ?? btn.label) : btn.label)}</button>
+        `,
+      ).join('')}
+      <button type="button" class="sim-feed-btn sim-walk-btn" id="btn-sim-walk" title="${
+        isEn ? 'Walk & peek around the stage' : '立刻溜达一下（含边缘探头）'
+      }">${isEn ? '🚶 Walk' : '🚶溜达一下'}</button>
+      <span class="sim-bar-sep" aria-hidden="true"></span>
+      ${SIM_PROVIDER_BUTTONS.map(
+        (btn) => `
+          <button
+            type="button"
+            class="sim-feed-btn"
+            data-sim-provider="${btn.provider}"
+            data-sim-tokens="${btn.tokens}"
+            style="--btn-accent:${btn.color}"
+            title="${escapeHtml(
+              isEn
+                ? `Simulate +${formatCompactNumber(btn.tokens)} ${btn.label} tokens`
+                : `模拟 ${btn.label} 消耗 +${formatCompactNumber(btn.tokens)} Tokens 并联动敲键盘打工`,
+            )}"
+          >
+            ${btn.emoji} +${formatCompactNumber(btn.tokens)} ${escapeHtml(btn.label)}
+          </button>
+        `,
+      ).join('')}
+      <button
+        type="button"
+        class="sim-feed-btn sim-burst"
+        id="btn-sim-burst"
+        title="${isEn ? 'Simulate token burn burst & trigger typing' : '一键模拟烧 Token 并触发当前 AI 娘敲键盘打工'}"
+      >
+        ${isEn ? '🔥 Burn Tokens' : '🔥 模拟烧 Token 触发打工'}
+      </button>
+      <span class="sim-bar-sep" aria-hidden="true"></span>
+      <button type="button" class="sim-feed-btn sim-action-btn" data-sim-action="pat" title="${isEn ? 'Head pat' : '触发摸头杀动作'}">${isEn ? '🤚 Pat' : '🤚摸头'}</button>
+      <button type="button" class="sim-feed-btn sim-action-btn" data-sim-action="work" title="${isEn ? 'Typing work' : '触发狂敲键盘打工动作'}">${isEn ? '⌨️ Work' : '⌨️打工'}</button>
+      <button type="button" class="sim-feed-btn sim-action-btn" data-sim-action="eat" title="${isEn ? 'Feed rice' : '触发坐姿投喂吃美食动作'}">${isEn ? '🍰 Eat' : '🍰投喂'}</button>
+      <button type="button" class="sim-feed-btn sim-action-btn" data-sim-action="music" title="${isEn ? 'Whale headphones vibe' : '触发小鲸鱼耳机听歌摇摆动作'}">${isEn ? '🎧 Music' : '🎧听歌'}</button>
+      <button type="button" class="sim-feed-btn sim-action-btn" data-sim-action="sleep" title="${isEn ? 'Nap on whale pillow' : '触发抱枕趴睡动作'}">${isEn ? '💤 Sleep' : '💤睡觉'}</button>
+    `;
+  }
+
+  private renderWebDemoChrome(): void {
+    if (this.isTauri) return;
+    const heroEl = this.rootEl.querySelector<HTMLElement>('#web-hero-header');
+    if (heroEl) heroEl.innerHTML = this.buildHeroHeaderInnerHtml();
+    const simBarEl = this.rootEl.querySelector<HTMLElement>('#web-sim-bar');
+    if (simBarEl) simBarEl.innerHTML = this.buildSimBarInnerHtml();
+  }
+
+  private toggleDemoLang(): void {
+    this.lang = this.lang === 'en' ? 'zh' : 'en';
+    writeStorage(STORAGE_LANG_KEY, this.lang);
+    this.renderWebDemoChrome();
+    this.renderPetHoverToys();
+    playSfx('click');
+    this.showToast(this.lang === 'en' ? '🌐 Switched to English UI' : '🌐 已切换为中文界面');
+  }
+
   private buildShellDom(): void {
     const heroHeaderHtml = !this.isTauri
-      ? `
-        <header class="web-hero-header">
-          <div class="web-hero-title-row">
-            <h1 class="web-hero-title">🐳 DeepSlack · 深度摸鱼（烧币版）</h1>
-            <div class="web-hero-links">
-              <a
-                class="web-hero-link is-primary"
-                href="https://github.com/fanhhh1103/deepslack/releases/latest"
-                target="_blank"
-                rel="noopener"
-              >⬇️ 下载 macOS / Windows</a>
-              <a
-                class="web-hero-link"
-                href="https://github.com/fanhhh1103/deepslack"
-                target="_blank"
-                rel="noopener"
-              >⭐ GitHub</a>
-            </div>
-          </div>
-          <p class="web-hero-subtitle">烧真实 AI Token 喂养的赛博电子鸡 · 点桌宠 / 丢玩具 3 秒免安装试玩</p>
-        </header>
-      `
+      ? `<header class="web-hero-header" id="web-hero-header">${this.buildHeroHeaderInnerHtml()}</header>`
       : '';
 
     const simBarHtml = !this.isTauri
-      ? `
-        <div class="web-sim-bar" id="web-sim-bar">
-          <span class="sim-bar-label">🎮 3 秒试玩交互</span>
-          ${SIM_RATE_BUTTONS.map(
-            (btn) => `
-              <button
-                type="button"
-                class="sim-feed-btn sim-rate-btn"
-                data-sim-rate="${btn.tps}"
-                data-sim-rate-key="${btn.key}"
-                title="模拟实时速率 ${escapeHtml(formatRate(btn.tps))}，持续 20 秒"
-              >${escapeHtml(btn.label)}</button>
-            `,
-          ).join('')}
-          <button type="button" class="sim-feed-btn sim-walk-btn" id="btn-sim-walk" title="立刻溜达一下（含边缘探头）">🚶溜达一下</button>
-          <span class="sim-bar-sep" aria-hidden="true"></span>
-          ${SIM_PROVIDER_BUTTONS.map(
-            (btn) => `
-              <button
-                type="button"
-                class="sim-feed-btn"
-                data-sim-provider="${btn.provider}"
-                data-sim-tokens="${btn.tokens}"
-                style="--btn-accent:${btn.color}"
-                title="模拟 ${btn.label} 消耗 +${formatCompactNumber(btn.tokens)} Tokens 并联动敲键盘打工"
-              >
-                ${btn.emoji} +${formatCompactNumber(btn.tokens)} ${escapeHtml(btn.label)}
-              </button>
-            `,
-          ).join('')}
-          <button
-            type="button"
-            class="sim-feed-btn sim-burst"
-            id="btn-sim-burst"
-            title="一键模拟烧 Token 并触发当前 AI 娘敲键盘打工"
-          >
-            🔥 模拟烧 Token 触发打工
-          </button>
-          <span class="sim-bar-sep" aria-hidden="true"></span>
-          <button type="button" class="sim-feed-btn sim-action-btn" data-sim-action="pat" title="触发摸头杀动作">🤚摸头</button>
-          <button type="button" class="sim-feed-btn sim-action-btn" data-sim-action="work" title="触发狂敲键盘打工动作">⌨️打工</button>
-          <button type="button" class="sim-feed-btn sim-action-btn" data-sim-action="eat" title="触发坐姿投喂吃美食动作">🍰投喂</button>
-          <button type="button" class="sim-feed-btn sim-action-btn" data-sim-action="music" title="触发小鲸鱼耳机听歌摇摆动作">🎧听歌</button>
-          <button type="button" class="sim-feed-btn sim-action-btn" data-sim-action="sleep" title="触发抱枕趴睡动作">💤睡觉</button>
-        </div>
-      `
+      ? `<div class="web-sim-bar" id="web-sim-bar">${this.buildSimBarInnerHtml()}</div>`
       : '';
 
     this.rootEl.innerHTML = `
@@ -440,6 +505,16 @@ export class CyberPetApp {
   }
 
   private bindEvents(): void {
+    const heroHeader = this.rootEl.querySelector('#web-hero-header');
+    if (heroHeader) {
+      heroHeader.addEventListener('click', (ev) => {
+        const target = ev.target as HTMLElement | null;
+        if (target?.closest('#btn-lang-toggle')) {
+          this.toggleDemoLang();
+        }
+      });
+    }
+
     // 浏览器顶部纯桌宠调试条（模拟速率 / 溜达 / 模拟烧 Token / 4 动作快捷键）
     const simBar = this.rootEl.querySelector('#web-sim-bar');
     if (simBar) {
@@ -1015,7 +1090,7 @@ export class CyberPetApp {
   }
 
   private renderPetHoverToys(): void {
-    this.petHoverToysEl.innerHTML = buildPetHoverToysHtml();
+    this.petHoverToysEl.innerHTML = buildPetHoverToysHtml(this.lang);
   }
 
   private renderCharSwitcher(): void {

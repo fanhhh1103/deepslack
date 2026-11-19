@@ -317,14 +317,16 @@ export const PET_HOVER_TOYS: readonly {
   action: PetToyAction;
   emoji: string;
   label: string;
+  labelEn: string;
   title: string;
+  titleEn: string;
 }[] = [
-  { action: 'rice', emoji: '🍚', label: '扔饭', title: '从天上空投一碗大白饭（吃完碗塔 +1）' },
-  { action: 'coffee', emoji: '☕', label: '美式', title: '空投冰美式：之后 10 秒元气提速 1.4 倍速' },
-  { action: 'bug', emoji: '🐛', label: '砸Bug', title: '空投一只 Bug：吓一跳再抡起充气大锤暴砸' },
-  { action: 'music', emoji: '🎧', label: '听歌', title: '戴上小鲸鱼耳机听歌摇摆' },
-  { action: 'pat', emoji: '🤚', label: '摸头', title: '摸头杀' },
-  { action: 'sleep', emoji: '💤', label: '睡觉', title: '抱枕趴睡' },
+  { action: 'rice', emoji: '🍚', label: '扔饭', labelEn: 'Rice', title: '从天上空投一碗大白饭（吃完碗塔 +1）', titleEn: 'Drop a rice bowl (+1 bowl tower)' },
+  { action: 'coffee', emoji: '☕', label: '美式', labelEn: 'Coffee', title: '空投冰美式：之后 10 秒元气提速 1.4 倍速', titleEn: 'Drop iced coffee (1.4x speed boost for 10s)' },
+  { action: 'bug', emoji: '🐛', label: '砸Bug', labelEn: 'Bonk', title: '空投一只 Bug：吓一跳再抡起充气大锤暴砸', titleEn: 'Drop a bug to smash with toy hammer' },
+  { action: 'music', emoji: '🎧', label: '听歌', labelEn: 'Music', title: '戴上小鲸鱼耳机听歌摇摆', titleEn: 'Vibe with whale headphones' },
+  { action: 'pat', emoji: '🤚', label: '摸头', labelEn: 'Pat', title: '摸头杀', titleEn: 'Head pat' },
+  { action: 'sleep', emoji: '💤', label: '睡觉', labelEn: 'Sleep', title: '抱枕趴睡', titleEn: 'Nap on whale pillow' },
 ];
 
 export function isPetToyAction(val: string | undefined): val is PetToyAction {
@@ -334,16 +336,17 @@ export function isPetToyAction(val: string | undefined): val is PetToyAction {
 /**
  * 构建悬停空投小玩具条按钮组（平时隐藏，鼠标移入桌宠区时淡入）
  */
-export function buildPetHoverToysHtml(): string {
+export function buildPetHoverToysHtml(lang: 'zh' | 'en' = 'zh'): string {
+  const isEn = lang === 'en';
   return PET_HOVER_TOYS.map(
     (toy) => `
       <button
         type="button"
         class="pet-toy-btn"
         data-pet-toy="${toy.action}"
-        title="${escapeHtml(toy.title)}"
+        title="${escapeHtml(isEn ? toy.titleEn : toy.title)}"
       >
-        <span>${toy.emoji}${escapeHtml(toy.label)}</span>
+        <span>${toy.emoji}${escapeHtml(isEn ? toy.labelEn : toy.label)}</span>
       </button>
     `,
   ).join('');
